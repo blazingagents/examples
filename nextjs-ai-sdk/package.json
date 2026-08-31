@@ -1,0 +1,28 @@
+{
+  "name": "@blazing-agents/example-nextjs-ai-sdk",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "check": "npm run typecheck && npm run lint",
+    "dev": "next dev",
+    "fix": "ultracite fix app lib next.config.ts",
+    "lint": "ultracite check app lib next.config.ts",
+    "start:test": "next dev --hostname 127.0.0.1 --port ${PORT:-3000}",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "4.0.87",
+    "@blazing-agents/sdk": "*",
+    "ai": "7.0.84",
+    "next": "16.3.3",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "typescript": "7.0.2",
+    "ultracite": "7.10.2"
+  }
+}

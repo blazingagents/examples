@@ -1,0 +1,13 @@
+{
+  "name": "@blazing-agents/examples",
+  "private": true,
+  "scripts": {
+    "check": "npm run check --workspaces --if-present"
+  },
+  "workspaces": [
+    "*"
+  ],
+  "engines": {
+    "node": ">=24"
+  }
+}

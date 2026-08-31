@@ -1,0 +1,23 @@
+{
+  "name": "@blazing-agents/example-cloudflare-worker-relay",
+  "private": true,
+  "scripts": {
+    "check": "npm run typecheck && npm run lint",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "fix": "ultracite fix src",
+    "lint": "ultracite check src",
+    "start:test": "wrangler d1 migrations apply blazing-agents-sessions --local --persist-to ${WRANGLER_STATE_PATH:-.wrangler/test-state} && wrangler dev --ip 127.0.0.1 --port ${PORT:-8787} --persist-to ${WRANGLER_STATE_PATH:-.wrangler/test-state} --var ALLOWED_ORIGINS:$ALLOWED_ORIGINS --var APP_USER_A_TOKEN:$APP_USER_A_TOKEN --var APP_USER_B_TOKEN:$APP_USER_B_TOKEN --var BLAZING_AGENTS_AGENT_ID:$BLAZING_AGENTS_AGENT_ID --var BLAZING_AGENTS_API_KEY:$BLAZING_AGENTS_API_KEY --var BLAZING_AGENTS_BASE_URL:$BLAZING_AGENTS_BASE_URL",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@blazing-agents/sdk": "*",
+    "ai": "7.0.84"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260831.1",
+    "typescript": "7.0.2",
+    "ultracite": "7.10.2",
+    "wrangler": "4.127.1"
+  }
+}

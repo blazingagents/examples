@@ -1,0 +1,126 @@
+"use client";
+
+import { useChat, useCompletion } from "@ai-sdk/react";
+import { BlazingAgentsChatTransport } from "@blazing-agents/sdk";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+
+export default function Page() {
+	const [token, setToken] = useState("");
+	const [chatInput, setChatInput] = useState("");
+	const [sessionId, setSessionId] = useState<string>();
+	useEffect(() => {
+		setSessionId(localStorage.getItem("blazing-agents-session") ?? undefined);
+	}, []);
+	const headers = useMemo(
+		() => ({ authorization: `Bearer ${token}` }),
+		[token],
+	);
+	const transport = useMemo(
+		() =>
+			new BlazingAgentsChatTransport({
+				api: "/api/chat",
+				headers,
+				onSessionId(id) {
+					localStorage.setItem("blazing-agents-session", id);
+					setSessionId(id);
+				},
+				sessionId,
+			}),
+		[headers, sessionId],
+	);
+	const { clearError, error, messages, regenerate, sendMessage, status, stop } =
+		useChat({ transport });
+	const completion = useCompletion({
+		api: "/api/completion",
+		headers,
+		streamProtocol: "text",
+	});
+
+	function submitChat(event: FormEvent) {
+		event.preventDefault();
+		if (chatInput.trim()) {
+			void sendMessage({ text: chatInput });
+			setChatInput("");
+		}
+	}
+
+	function newSession() {
+		localStorage.removeItem("blazing-agents-session");
+		setSessionId(undefined);
+		clearError();
+	}
+
+	const busy = status === "submitted" || status === "streaming";
+
+	return (
+		<main
+			style={{ fontFamily: "sans-serif", margin: "2rem auto", maxWidth: 720 }}
+		>
+			<h1>Blazing Agents + Next.js</h1>
+			<label>
+				Application token
+				<input
+					value={token}
+					onChange={(event) => setToken(event.target.value)}
+				/>
+			</label>
+			<p>Session: {sessionId ?? "new"}</p>
+
+			{messages.map((message) => (
+				<p key={message.id}>
+					<strong>{message.role}:</strong>{" "}
+					{message.parts
+						.filter((part) => part.type === "text")
+						.map((part) => part.text)
+						.join("")}
+				</p>
+			))}
+			<form onSubmit={submitChat}>
+				<input
+					value={chatInput}
+					onChange={(event) => setChatInput(event.target.value)}
+				/>
+				<button type="submit" disabled={busy}>
+					Send
+				</button>
+				<button type="button" onClick={() => stop()}>
+					Cancel
+				</button>
+				<button
+					type="button"
+					onClick={() => void regenerate()}
+					disabled={!sessionId}
+				>
+					Regenerate
+				</button>
+				<button type="button" onClick={newSession}>
+					New session
+				</button>
+			</form>
+			{error && (
+				<p role="alert">
+					{error.message}{" "}
+					<button type="button" onClick={clearError}>
+						Dismiss
+					</button>
+				</p>
+			)}
+
+			<h2>Completion</h2>
+			<form onSubmit={completion.handleSubmit}>
+				<input
+					value={completion.input}
+					onChange={completion.handleInputChange}
+				/>
+				<button type="submit" disabled={completion.isLoading}>
+					Complete
+				</button>
+				<button type="button" onClick={completion.stop}>
+					Cancel
+				</button>
+			</form>
+			<output>{completion.completion}</output>
+			{completion.error && <p role="alert">{completion.error.message}</p>}
+		</main>
+	);
+}

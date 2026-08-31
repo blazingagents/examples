@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "blazing-agents-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": ["enable_request_signal"],
+  "d1_databases": [
+    {
+      "binding": "SESSIONS",
+      "database_name": "blazing-agents-sessions",
+      "database_id": "replace-with-your-d1-database-id"
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:5173",
+    "BLAZING_AGENTS_AGENT_ID": "ag_0123456789abcdef",
+    "BLAZING_AGENTS_BASE_URL": "https://api.blazingagents.com"
+  }
+}
