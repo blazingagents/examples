@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": ["ultracite/biome/core", "ultracite/biome/type-aware"],
+  "assist": {
+    "actions": {
+      "source": {
+        "useSortedAttributes": "off",
+        "useSortedKeys": "off"
+      }
+    }
+  },
+  "formatter": {
+    "indentStyle": "tab"
+  },
+  "javascript": {
+    "formatter": {
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "rules": {
+      "complexity": {
+        "noVoid": "off",
+        "useSimplifiedLogicExpression": "off"
+      },
+      "correctness": {
+        "noUnresolvedImports": "off",
+        "useImportExtensions": "off"
+      },
+      "performance": {
+        "noJsxPropsBind": "off",
+        "useTopLevelRegex": "off"
+      },
+      "style": {
+        "noNestedTernary": "off",
+        "noParameterProperties": "off",
+        "useBlockStatements": "off",
+        "useFilenamingConvention": "off"
+      },
+      "suspicious": {
+        "noShadow": "off",
+        "useAwait": "off"
+      }
+    }
+  }
+}

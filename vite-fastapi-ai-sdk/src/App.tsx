@@ -1,5 +1,5 @@
 import { useChat, useCompletion } from "@ai-sdk/react";
-import { BlazingAgentsChatTransport } from "@blazing-agents/sdk";
+import { BlazingAgentsChatTransport } from "@blazingagents/sdk";
 import { type FormEvent, useMemo, useState } from "react";
 
 const api = import.meta.env.VITE_API_BASE_URL ?? "";

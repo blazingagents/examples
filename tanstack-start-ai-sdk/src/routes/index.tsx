@@ -1,5 +1,5 @@
 import { useChat, useCompletion } from "@ai-sdk/react";
-import { BlazingAgentsChatTransport } from "@blazing-agents/sdk";
+import { BlazingAgentsChatTransport } from "@blazingagents/sdk";
 import { createFileRoute } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
