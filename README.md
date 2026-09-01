@@ -1,6 +1,36 @@
-# Blazing Agents examples
+<div align="center">
+  <a href="https://docs.blazingagents.com">
+    <img src="https://raw.githubusercontent.com/blazingagents/docs/main/public/brand/icon.svg" alt="Blazing Agents logo" width="96">
+  </a>
+  <h1>Blazing Agents Examples</h1>
+  <p>Runnable examples for connecting popular web stacks to Blazing Agents.</p>
+  <p>
+    <a href="https://docs.blazingagents.com/getting-started/connect-your-app">Documentation</a>
+  </p>
+</div>
 
-Runnable examples for connecting popular web stacks to Blazing Agents while keeping API keys on the server.
+Each example keeps API keys on the server and includes stack-specific setup,
+security, and deployment guidance.
+
+## Features
+
+- Complete chat applications using the Blazing Agents TypeScript SDK.
+- Server-side API-key handling and streaming response relays.
+- Examples for Next.js, TanStack Start, Vite, Express, FastAPI, Hono, and
+  Cloudflare Workers.
+- Stack-specific setup, security, and deployment guidance.
+
+## Installation
+
+Clone the repository, choose an example, and follow its README:
+
+```bash
+git clone https://github.com/blazingagents/examples.git
+cd examples/nextjs-ai-sdk
+npm install
+```
+
+Each example documents its required environment variables and run command.
 
 ## Prerequisites
 
@@ -21,3 +51,8 @@ Runnable examples for connecting popular web stacks to Blazing Agents while keep
 | [Vite + Hono + AI SDK](./vite-hono-ai-sdk/) | React, Vite, and Hono | Copy `.env.example` to `.env`, then run `npm install` and `npm run dev`. |
 
 Each example README contains its complete setup, security notes, and deployment guidance.
+
+## Documentation
+
+See [Connect your app](https://docs.blazingagents.com/getting-started/connect-your-app)
+for the integration guide and links to the SDK documentation.
