@@ -3,7 +3,7 @@ import {
 	BlazingAgents,
 	createChatRelay,
 	createCompletionRelay,
-} from "@blazing-agents/sdk";
+} from "@blazingagents/sdk";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 

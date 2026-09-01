@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat, useCompletion } from "@ai-sdk/react";
-import { BlazingAgentsChatTransport } from "@blazing-agents/sdk";
+import { BlazingAgentsChatTransport } from "@blazingagents/sdk";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 export default function Page() {

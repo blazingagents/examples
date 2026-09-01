@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.87",
-    "@blazing-agents/sdk": "*",
+    "@blazingagents/sdk": "0.1.0",
     "ai": "7.0.84",
     "react": "19.2.4",
     "react-dom": "19.2.4"

@@ -3,7 +3,7 @@ import {
 	createChatRelay,
 	createCompletionRelay,
 	type SessionOwnershipStore,
-} from "@blazing-agents/sdk";
+} from "@blazingagents/sdk";
 
 interface Env {
 	ALLOWED_ORIGINS: string;

@@ -3,7 +3,7 @@ import {
 	BlazingAgents,
 	createChatRelay,
 	createCompletionRelay,
-} from "@blazing-agents/sdk";
+} from "@blazingagents/sdk";
 
 function env(name: string): string {
 	const value = process.env[name];
