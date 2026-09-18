@@ -1,6 +1,6 @@
 # Vite + FastAPI + AI SDK
 
-This example pairs a small React/Vite UI with a FastAPI relay. The browser uses an application token; FastAPI maps it to a trusted user ID, keeps the Blazing Agents key server-side, and persists Session ownership in SQLite.
+This example pairs a small React/Vite UI with a FastAPI relay built on the Blazing Agents Python SDK. The browser uses an application token; FastAPI maps it to a trusted user ID, keeps the Blazing Agents key server-side, and persists Session ownership in SQLite.
 
 ## Run locally
 
