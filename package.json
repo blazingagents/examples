@@ -2,7 +2,9 @@
   "name": "@blazing-agents/examples",
   "private": true,
   "scripts": {
-    "check": "npm run check --workspaces --if-present"
+    "check": "biome format tests vitest.config.mjs && npm run check --workspaces --if-present && npm run build && npm test",
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run"
   },
   "workspaces": [
     "*"
@@ -11,6 +13,8 @@
     "node": ">=24"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.11"
+    "@biomejs/biome": "^2.5.11",
+    "playwright": "1.63.0",
+    "vitest": "5.0.2"
   }
 }

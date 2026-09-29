@@ -58,7 +58,8 @@ export default {
 		const resolveContext = (relayRequest: Request) => {
 			const token = relayRequest.headers
 				.get("authorization")
-				?.replace(/^Bearer /, "");
+				?.match(/^Bearer (.+)$/)?.[1];
+			if (!token) return Promise.resolve(null);
 			const userId =
 				token === env.APP_USER_A_TOKEN
 					? "user-a"

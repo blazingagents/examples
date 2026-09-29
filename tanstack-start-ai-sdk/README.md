@@ -5,10 +5,10 @@ This example uses TanStack Start server routes to keep the Blazing Agents API ke
 ```sh
 cp .env.example .env
 npm install
-npm run dev
+node --env-file=.env --run dev
 ```
 
-Open `http://localhost:3000`, enter one of the configured application tokens, and send a chat or completion. The browser saves the returned Session ID and resumes it after reload. Use `New session` before switching application users. `Cancel` aborts either active stream, and `Regenerate` reruns the last response in the owned Session.
+Open `http://localhost:5173`, enter one of the configured application tokens, and send a chat or completion. The browser saves the returned Session ID and resumes it after reload. Use `New session` before switching application users. `Cancel` aborts either active stream, and `Regenerate` reruns the last response in the owned Session.
 
 Replace the two-token demo authentication with your application's session verification in production. Never expose `BLAZING_AGENTS_API_KEY` through a `VITE_*` variable or browser code.
 

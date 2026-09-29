@@ -164,6 +164,7 @@ export function App() {
 			<h2>Completion</h2>
 			<form onSubmit={completion.handleSubmit}>
 				<input
+					aria-label="Completion prompt"
 					value={completion.input}
 					onChange={completion.handleInputChange}
 				/>
