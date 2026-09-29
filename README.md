@@ -35,7 +35,7 @@ Each example documents its required environment variables and run command.
 ## Prerequisites
 
 - Node.js 24 or newer and npm
-- A Blazing Agents API key and Agent ID
+- A Blazing Agents API key and a published Agent with a configured Provider/model
 - Python 3.12 or newer for the FastAPI example
 - A Cloudflare account and Wrangler for the Worker example
 
@@ -45,12 +45,33 @@ Each example documents its required environment variables and run command.
 | --- | --- | --- |
 | [Cloudflare Worker relay](./cloudflare-worker-relay/) | Cloudflare Workers and D1 | Follow its README to create D1, configure secrets, and run `npm run dev`. |
 | [Next.js + AI SDK](./nextjs-ai-sdk/) | Next.js App Router | Copy `.env.example` to `.env.local`, then run `npm install` and `npm run dev`. |
-| [TanStack Start + AI SDK](./tanstack-start-ai-sdk/) | TanStack Start | Copy `.env.example` to `.env`, then run `npm install` and `npm run dev`. |
+| [TanStack Start + AI SDK](./tanstack-start-ai-sdk/) | TanStack Start | Follow its README to load `.env` and run the server. |
 | [Vite + Express + AI SDK](./vite-express-ai-sdk/) | React, Vite, and Express | Copy `.env.example` to `.env`, then run `npm install` and `node --env-file=.env --run dev`. |
 | [Vite + FastAPI + AI SDK](./vite-fastapi-ai-sdk/) | React, Vite, and FastAPI | Create a Python virtual environment, install `requirements.txt`, configure `.env`, then run `npm install` and `npm run dev`. |
-| [Vite + Hono + AI SDK](./vite-hono-ai-sdk/) | React, Vite, and Hono | Copy `.env.example` to `.env`, then run `npm install` and `npm run dev`. |
+| [Vite + Hono + AI SDK](./vite-hono-ai-sdk/) | React, Vite, and Hono | Follow its README to export `.env` and run both servers. |
+| [Structured output](./structured-output/) | Node.js and Zod | Classify a support ticket into validated JSON with `npm start`. |
 
 Each example README contains its complete setup, security notes, and deployment guidance.
+
+## Choose a starting point
+
+Start with **Next.js** for a full chat application, **Vite + FastAPI** for a
+Python backend, or **structured output** for a small script without a browser.
+The other chat examples show the same integration in different frameworks.
+
+## Verification
+
+From the repository root:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run check
+```
+
+`check` runs type checks, lint, production builds, and the tests. Run just the
+integration and browser tests with `npm test`. Python checks require `uv`.
+See [the test guide](./tests/README.md) for coverage and limitations.
 
 ## Documentation
 

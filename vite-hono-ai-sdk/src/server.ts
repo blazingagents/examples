@@ -40,7 +40,10 @@ const userAToken = env("APP_USER_A_TOKEN");
 const userBToken = env("APP_USER_B_TOKEN");
 
 function resolveContext(request: Request) {
-	const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
+	const token = request.headers
+		.get("authorization")
+		?.match(/^Bearer (.+)$/)?.[1];
+	if (!token) return Promise.resolve(null);
 	const userId =
 		token === userAToken
 			? "user-a"

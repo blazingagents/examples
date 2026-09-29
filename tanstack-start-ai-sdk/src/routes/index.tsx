@@ -1,12 +1,13 @@
 import { useChat, useCompletion } from "@ai-sdk/react";
 import { BlazingAgentsChatTransport } from "@blazingagents/sdk";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useHydrated } from "@tanstack/react-router";
 import { generateId, type UIMessage } from "ai";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 export const Route = createFileRoute("/")({ component: App });
 
 function App() {
+	const hydrated = useHydrated();
 	const [token, setToken] = useState("");
 	const [chatInput, setChatInput] = useState("");
 	const [sessionId, setSessionId] = useState<string>();
@@ -107,6 +108,7 @@ function App() {
 			<label>
 				Application token{" "}
 				<input
+					disabled={!hydrated}
 					value={token}
 					onChange={(event) => setToken(event.target.value)}
 				/>
@@ -130,7 +132,7 @@ function App() {
 				<input
 					aria-label="Message"
 					value={chatInput}
-					disabled={busy}
+					disabled={!hydrated || busy}
 					onChange={(event) => setChatInput(event.target.value)}
 				/>
 				<button type="submit" disabled={busy || !chatInput.trim()}>
@@ -165,6 +167,8 @@ function App() {
 			<h2>Completion</h2>
 			<form onSubmit={completion.handleSubmit}>
 				<input
+					aria-label="Completion prompt"
+					disabled={!hydrated}
 					value={completion.input}
 					onChange={completion.handleInputChange}
 				/>

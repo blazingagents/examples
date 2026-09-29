@@ -36,7 +36,10 @@ const sessions = {
 };
 
 function resolveContext(request: Request) {
-	const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
+	const token = request.headers
+		.get("authorization")
+		?.match(/^Bearer (.+)$/)?.[1];
+	if (!token) return Promise.resolve(null);
 	const userId =
 		token === process.env.APP_USER_A_TOKEN
 			? "user-a"
