@@ -3,9 +3,11 @@ import {
 	BlazingAgents,
 	createChatRelay,
 	createCompletionRelay,
+	defineFunction,
 } from "@blazingagents/sdk";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { z } from "zod";
 
 function env(name: string): string {
 	const value = process.env[name];
@@ -39,6 +41,17 @@ const client = new BlazingAgents({
 const userAToken = env("APP_USER_A_TOKEN");
 const userBToken = env("APP_USER_B_TOKEN");
 
+const functions = {
+	shippingQuote: defineFunction({
+		description: "Get the shipping price for a destination country.",
+		inputSchema: z.object({ country: z.enum(["GB", "US"]) }),
+		execute: ({ country }) => ({
+			currency: "GBP",
+			amountMinor: country === "GB" ? 499 : 1499,
+		}),
+	}),
+};
+
 function resolveContext(request: Request) {
 	const token = request.headers
 		.get("authorization")
@@ -54,6 +67,7 @@ function resolveContext(request: Request) {
 		userId
 			? {
 					agentId: env("BLAZING_AGENTS_AGENT_ID"),
+					functions,
 					metadata: { app: "vite-hono" },
 					userId,
 				}
