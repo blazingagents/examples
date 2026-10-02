@@ -20,6 +20,12 @@ Open <http://localhost:5173> and enter either configured `APP_USER_A_TOKEN` or
 credentials. In production, replace them with your normal authentication and
 derive the trusted `userId` from its verified server-side identity.
 
+Ask "How much is shipping to the US?" to call the backend's `shippingQuote`
+function. Its sample rates return GBP 14.99 for the US and GBP 4.99 for GB.
+Use the agent's default `full` chat approval policy for this example.
+See [backend functions](https://docs.blazingagents.com/agents/tools/backend-functions)
+for approval resume, cancellation, and application identity.
+
 `useChat` stores the server-minted Session ID in `localStorage`, so a reload
 resumes it. Hono checks the durable SQLite ownership record before every resume
 or regeneration. **New session** clears the browser's current Session ID.

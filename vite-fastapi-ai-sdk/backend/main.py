@@ -5,7 +5,7 @@ import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from blazing_agents import (
     APIConnectionError,
@@ -14,14 +14,37 @@ from blazing_agents import (
     AsyncChatStream,
     AsyncCompletionStream,
     BlazingAgentsError,
+    FunctionContext,
     StreamError,
+    define_function,
 )
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 SESSION_ID = re.compile(r"^ss_[A-Za-z0-9]{16}$")
 DATABASE = Path(os.getenv("SESSION_DB", "sessions.db"))
+
+
+class ShippingInput(BaseModel):
+    country: Literal["GB", "US"]
+
+
+def shipping_quote(value: ShippingInput, context: FunctionContext) -> dict[str, object]:
+    return {
+        "currency": "GBP",
+        "amountMinor": 499 if value.country == "GB" else 1499,
+    }
+
+
+FUNCTIONS = {
+    "shippingQuote": define_function(
+        description="Get the shipping price for a destination country.",
+        input_schema=ShippingInput,
+        execute=shipping_quote,
+    ),
+}
 
 
 def required(name: str) -> str:
@@ -189,6 +212,7 @@ async def chat(request: Request):
     try:
         stream = await client.chat(
             agent_id=agent_id,
+            functions=FUNCTIONS,
             message=incoming["message"],
             trigger=trigger if session_id else "submit-message",
             user_id=owner,

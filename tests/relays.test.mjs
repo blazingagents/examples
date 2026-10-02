@@ -12,6 +12,7 @@ const agentId = "ag_0123456789abcdef";
 const origin = "http://localhost:5173";
 const requests = [];
 const disconnected = new Set();
+const functionCalls = new Map();
 let sequence = 0;
 let upstream;
 let upstreamUrl;
@@ -88,6 +89,48 @@ beforeAll(async () => {
 			body,
 			authorization: request.headers.authorization,
 		});
+		const functionRoute = request.url.match(
+			/\/function-calls\/(fc_[A-Za-z0-9]{16})\/(claim|result)$/,
+		);
+		if (functionRoute) {
+			const call = functionCalls.get(functionRoute[1]);
+			response.setHeader("content-type", "application/json");
+			if (
+				!call ||
+				(call.claimRequestId && call.claimRequestId !== body.claimRequestId)
+			) {
+				response.writeHead(409);
+				response.end(
+					JSON.stringify({
+						error: {
+							code: "function_call_conflict",
+							message: "Call is unavailable.",
+						},
+					}),
+				);
+				return;
+			}
+			if (functionRoute[2] === "claim") {
+				call.claimRequestId = body.claimRequestId;
+				response.end(JSON.stringify({ claimed: true }));
+				return;
+			}
+			if (!call.claimRequestId) {
+				response.writeHead(409);
+				response.end(
+					JSON.stringify({
+						error: {
+							code: "function_call_conflict",
+							message: "Claim required.",
+						},
+					}),
+				);
+				return;
+			}
+			response.end(JSON.stringify({ accepted: true }));
+			call.finish(body.outcome);
+			return;
+		}
 		const prompt = body.prompt ?? body.message?.parts[0]?.text;
 		if (prompt === "fail") {
 			response.writeHead(422, {
@@ -151,6 +194,52 @@ beforeAll(async () => {
 			"x-request-id": "fixture-chat",
 			location: `/v1/agents/${agentId}/sessions/${sessionId}`,
 		});
+		if (prompt === "shipping quote") {
+			const id = `fc_${String(++sequence).padStart(16, "0")}`;
+			const send = (event) =>
+				response.write(`data: ${JSON.stringify(event)}\n\n`);
+			const timer = setTimeout(() => response.destroy(), 5000);
+			functionCalls.set(id, {
+				finish(outcome) {
+					send({
+						type: "tool-output-available",
+						toolCallId: id,
+						output: outcome,
+					});
+					send({ type: "text-start", id: "quote" });
+					send({
+						type: "text-delta",
+						id: "quote",
+						delta: JSON.stringify(outcome),
+					});
+					send({ type: "text-end", id: "quote" });
+					send({ type: "finish", finishReason: "stop" });
+					response.end("data: [DONE]\n\n");
+				},
+			});
+			response.on("close", () => {
+				clearTimeout(timer);
+				functionCalls.delete(id);
+			});
+			send({ type: "start", messageId: `assistant-${sequence}` });
+			send({
+				type: "data-ba-function-call",
+				data: {
+					id,
+					name: "shippingQuote",
+					input: { country: "US" },
+					deadlineAt: new Date(Date.now() + 5000).toISOString(),
+				},
+				transient: true,
+			});
+			send({
+				type: "tool-input-available",
+				toolCallId: id,
+				toolName: "shippingQuote",
+				input: { country: "US" },
+			});
+			return;
+		}
 		const events = [
 			{ type: "start", messageId: `assistant-${sequence}` },
 			{ type: "text-start", id: "text-1" },
@@ -316,6 +405,37 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				});
 			}
 		});
+
+		if (["vite-hono-ai-sdk", "vite-fastapi-ai-sdk"].includes(directory)) {
+			it("executes a backend function and strips its private control event", async () => {
+				const before = requests.length;
+				const response = await post("chat", {
+					message: message("shipping quote"),
+					sessionId,
+				});
+				expect(response.status).toBe(200);
+				const output = await response.text();
+				expect(output).toContain('\\"amountMinor\\":1499');
+				expect(output).not.toContain("data-ba-function-call");
+				const calls = requests.slice(before);
+				expect(calls).toHaveLength(3);
+				expect(calls[0].body.functions.shippingQuote.inputSchema.type).toBe(
+					"object",
+				);
+				expect(calls[1].path).toMatch(
+					/\/function-calls\/fc_[A-Za-z0-9]{16}\/claim$/,
+				);
+				expect(calls[2].body).toEqual({
+					claimRequestId: calls[1].body.claimRequestId,
+					outcome: {
+						kind: "output",
+						value: { currency: "GBP", amountMinor: 1499 },
+					},
+				});
+				for (const call of calls)
+					expect(call.authorization).toBe("Bearer ba_test_server_only");
+			});
+		}
 
 		it("retains session ownership after restarting the server", async () => {
 			await stop(processes[0]);

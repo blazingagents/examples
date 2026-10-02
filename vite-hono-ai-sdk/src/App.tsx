@@ -6,7 +6,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 export function App() {
 	const [token, setToken] = useState("");
 	const [chatInput, setChatInput] = useState("");
-	const [sessionId, setSessionId] = useState<string>();
+	const [sessionId, setSessionId] = useState<string | undefined>(undefined);
 	const active = useRef(false);
 	const regenerating = useRef(false);
 	const completedMessages = useRef<UIMessage[]>([]);

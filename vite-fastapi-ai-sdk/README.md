@@ -20,6 +20,12 @@ npm run dev
 
 Open `http://localhost:5173` and enter either configured application token. The Vite development proxy sends `/api` requests to FastAPI on port 8000. The first chat creates a Session; its ID is saved in `localStorage`, authorized through SQLite, and resumed after reload. `New Session`, `Regenerate`, and both `Cancel` buttons demonstrate lifecycle and stream cancellation. Relay and streaming failures appear next to their respective form.
 
+Ask "How much is shipping to the US?" to call the backend's `shippingQuote`
+function. Its sample rates return GBP 14.99 for the US and GBP 4.99 for GB.
+Use the agent's default `full` chat approval policy for this example.
+See [backend functions](https://docs.blazingagents.com/agents/tools/backend-functions)
+for approval resume, cancellation, and application identity.
+
 To run only the backend (including from the repository integration harness):
 
 ```sh
