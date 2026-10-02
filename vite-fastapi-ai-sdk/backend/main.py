@@ -203,10 +203,7 @@ async def chat(request: Request):
     kwargs: dict[str, Any] = {}
     if message_id is not None:
         kwargs["message_id"] = message_id
-    if session_id is None:
-        if version := os.getenv("BLAZING_AGENTS_AGENT_VERSION"):
-            kwargs["version"] = int(version)
-    else:
+    if session_id is not None:
         kwargs["session_id"] = session_id
     client: AsyncBlazingAgents = request.app.state.blazing_agents
     try:
@@ -249,9 +246,6 @@ async def completion(request: Request):
     prompt = incoming.get("prompt") if incoming else None
     if not isinstance(prompt, str) or not prompt.strip():
         return error(400, "invalid_request", "Invalid request body.")
-    kwargs: dict[str, Any] = {}
-    if version := os.getenv("BLAZING_AGENTS_AGENT_VERSION"):
-        kwargs["version"] = int(version)
     client: AsyncBlazingAgents = request.app.state.blazing_agents
     try:
         stream = await client.completion_stream(
@@ -259,7 +253,6 @@ async def completion(request: Request):
             prompt=prompt.strip(),
             user_id=owner,
             metadata={"app": "vite-fastapi"},
-            **kwargs,
         )
     except BlazingAgentsError as exc:
         return relay_error(exc)
