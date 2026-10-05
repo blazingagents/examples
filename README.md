@@ -30,7 +30,8 @@ cd examples/nextjs-ai-sdk
 npm install
 ```
 
-Each example documents its required environment variables and run command.
+The TypeScript examples use `@blazingagents/sdk` 0.20.0; the FastAPI backend uses
+`blazing_agents` 0.14.0. Each example documents its environment variables and run command.
 
 ## Prerequisites
 

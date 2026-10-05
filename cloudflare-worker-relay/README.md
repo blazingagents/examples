@@ -1,5 +1,7 @@
 # Cloudflare Worker relay
 
+Uses `@blazingagents/sdk` 0.20.0. The relay supports one streamed approval continuation for an authenticated browser client.
+
 This backend-only Worker exposes `POST /chat` and `POST /completion`. It derives `userId` from application authentication, stores Session ownership in D1, allows only configured browser origins, exposes `Location` for Session persistence, and keeps the Blazing Agents key in a Worker secret.
 
 ```sh
