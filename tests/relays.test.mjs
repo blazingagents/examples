@@ -131,7 +131,79 @@ beforeAll(async () => {
 			call.finish(body.outcome);
 			return;
 		}
-		const prompt = body.prompt ?? body.message?.parts[0]?.text;
+		const chatRoute = new RegExp(
+			`^/v1/agents/${agentId}/sessions(?:/ss_[A-Za-z0-9]{16})?$`,
+		).test(request.url);
+		const continuationRoute = new RegExp(
+			`^/v1/agents/${agentId}/sessions/ss_[A-Za-z0-9]{16}/tool-approvals/continue$`,
+		).test(request.url);
+		const generationRoute = request.url === `/v1/agents/${agentId}/generation`;
+		if (
+			(!chatRoute && !generationRoute && !continuationRoute) ||
+			(chatRoute &&
+				("message" in body ||
+					!Array.isArray(body.messages) ||
+					body.messages.length !== 1 ||
+					body.messages.some(
+						(item) =>
+							item.role !== "user" || !item.id || !Array.isArray(item.parts),
+					) ||
+					Object.keys(body).some(
+						(key) =>
+							![
+								"messages",
+								"trigger",
+								"messageId",
+								"userId",
+								"metadata",
+								"functions",
+							].includes(key),
+					)))
+		) {
+			response.writeHead(400, { "content-type": "application/json" });
+			response.end(
+				JSON.stringify({
+					error: {
+						code: "validation_failed",
+						message: "Unexpected upstream contract.",
+					},
+				}),
+			);
+			return;
+		}
+		if (continuationRoute) {
+			if (
+				!Array.isArray(body.decisions) ||
+				!body.decisions.length ||
+				Object.keys(body).some(
+					(key) => !["decisions", "functions"].includes(key),
+				)
+			) {
+				response.writeHead(400, { "content-type": "application/json" });
+				response.end(
+					JSON.stringify({
+						error: {
+							code: "validation_failed",
+							message: "Invalid continuation.",
+						},
+					}),
+				);
+				return;
+			}
+			if (body.decisions[0].approvalId === "settled") {
+				response.writeHead(409, { "content-type": "application/json" });
+				response.end(
+					JSON.stringify({
+						error: {
+							code: "tool_approval_continuation_settled",
+							message: "Round already settled.",
+						},
+					}),
+				);
+				return;
+			}
+		}
+		const prompt = body.prompt ?? body.messages?.[0]?.parts[0]?.text;
 		if (prompt === "fail") {
 			response.writeHead(422, {
 				"content-type": "application/json",
@@ -162,7 +234,7 @@ beforeAll(async () => {
 			response.on("close", () => {
 				clearInterval(heartbeat);
 				clearTimeout(timer);
-				disconnected.add(body.message.id);
+				disconnected.add(body.messages[0].id);
 			});
 			return;
 		}
@@ -187,14 +259,19 @@ beforeAll(async () => {
 		const sessionId =
 			request.url.split("/").at(-1) === "sessions"
 				? `ss_${String(++sequence).padStart(16, "0")}`
-				: request.url.split("/").at(-1);
+				: continuationRoute
+					? request.url.split("/").at(-3)
+					: request.url.split("/").at(-1);
 		response.writeHead(200, {
 			"content-type": "text/event-stream",
 			"x-vercel-ai-ui-message-stream": "v1",
 			"x-request-id": "fixture-chat",
 			location: `/v1/agents/${agentId}/sessions/${sessionId}`,
 		});
-		if (prompt === "shipping quote") {
+		if (
+			prompt === "shipping quote" ||
+			(continuationRoute && body.functions?.shippingQuote)
+		) {
 			const id = `fc_${String(++sequence).padStart(16, "0")}`;
 			const send = (event) =>
 				response.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -371,8 +448,9 @@ for (const [directory, prefix, separateFrontend] of examples) {
 		});
 
 		it("streams a chat and records ownership from server authentication", async () => {
+			const sentMessage = message();
 			const response = await post("chat", {
-				message: message(),
+				message: sentMessage,
 				userId: "attacker",
 				agentId: "attacker",
 			});
@@ -385,14 +463,18 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			expect(requests.at(-1)).toMatchObject({
 				path: `/v1/agents/${agentId}/sessions`,
 				authorization: "Bearer ba_test_server_only",
-				body: { userId: "user-a" },
+				body: {
+					userId: "user-a",
+					messages: [sentMessage],
+				},
 			});
 		});
 
 		it("resumes and regenerates an owned session", async () => {
 			for (const trigger of ["submit-message", "regenerate-message"]) {
+				const sentMessage = message();
 				const response = await post("chat", {
-					message: message(),
+					message: sentMessage,
 					sessionId,
 					trigger,
 					messageId: "assistant-1",
@@ -401,9 +483,159 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				await response.text();
 				expect(requests.at(-1)).toMatchObject({
 					path: `/v1/agents/${agentId}/sessions/${sessionId}`,
-					body: { trigger, messageId: "assistant-1", userId: "user-a" },
+					body: {
+						trigger,
+						messageId: "assistant-1",
+						userId: "user-a",
+						messages: [sentMessage],
+					},
 				});
 			}
+		});
+
+		const approvalMessage = (approvalId = "current") => ({
+			id: "assistant-approval",
+			role: "assistant",
+			parts: [
+				{
+					type: "tool-shippingQuote",
+					toolCallId: "old-call",
+					state: "approval-responded",
+					input: { country: "US" },
+					approval: { id: "old", approved: false },
+				},
+				{
+					type: "tool-shippingQuote",
+					toolCallId: "completed-call",
+					state: "output-available",
+					input: { country: "US" },
+					output: { amountMinor: 1499 },
+				},
+				{ type: "reasoning", text: "Previous step" },
+				{ type: "source-url", sourceId: "source", url: "https://example.com" },
+				{ type: "step-start" },
+				{
+					type: "tool-shippingQuote",
+					toolCallId: "current-call",
+					state: "approval-responded",
+					input: { country: "US" },
+					approval: { id: approvalId, approved: true, reason: "Confirmed" },
+				},
+			],
+		});
+
+		it("continues only the current approval round with one streamed call", async () => {
+			const before = requests.length;
+			const approvedMessage = approvalMessage();
+			if (directory === "vite-fastapi-ai-sdk")
+				approvedMessage.parts.push({
+					type: "text",
+					text: "Unrelated",
+					state: "approval-responded",
+					approval: { id: "forged", approved: true },
+				});
+			const response = await post("chat", {
+				message: approvedMessage,
+				sessionId,
+			});
+			expect(response.status).toBe(200);
+			expect(response.headers.get("x-vercel-ai-ui-message-stream")).toBe("v1");
+			const output = await response.text();
+			const calls = requests.slice(before);
+			expect(
+				calls.filter((call) => call.path.endsWith("/tool-approvals/continue")),
+			).toHaveLength(1);
+			expect(calls[0].path).toBe(
+				`/v1/agents/${agentId}/sessions/${sessionId}/tool-approvals/continue`,
+			);
+			expect(calls[0].body.decisions).toEqual([
+				{ approvalId: "current", approved: true, reason: "Confirmed" },
+			]);
+			if (["vite-hono-ai-sdk", "vite-fastapi-ai-sdk"].includes(directory)) {
+				expect(calls).toHaveLength(3);
+				expect(calls[0].body.functions.shippingQuote.inputSchema.type).toBe(
+					"object",
+				);
+				expect(output).toContain("amountMinor");
+				expect(output).not.toContain("data-ba-function-call");
+			} else {
+				expect(calls).toHaveLength(1);
+				expect(output).toContain("Reply from BA");
+			}
+		});
+
+		it("rejects unowned or incomplete approvals without upstream work", async () => {
+			const before = requests.length;
+			for (const [body, token, status] of [
+				[
+					{
+						message: {
+							...approvalMessage(),
+							parts: [
+								...approvalMessage().parts,
+								{ type: "step-start" },
+								{
+									type: "text",
+									text: "No current decisions",
+									state: "approval-responded",
+									approval: { id: "forged", approved: true },
+								},
+							],
+						},
+						sessionId,
+					},
+					"Bearer demo-a",
+					400,
+				],
+
+				[{ message: approvalMessage() }, "Bearer demo-a", 400],
+				[
+					{
+						message: {
+							id: "empty",
+							role: "assistant",
+							parts: [{ type: "text", text: "No decisions" }],
+						},
+						sessionId,
+					},
+					"Bearer demo-a",
+					400,
+				],
+				[{ message: approvalMessage(), sessionId }, "Bearer demo-b", 403],
+				[{ message: approvalMessage(), sessionId }, null, 401],
+				[
+					{
+						message: {
+							...approvalMessage(),
+							parts: [
+								{
+									...approvalMessage().parts.at(-1),
+									approval: { id: "bad", approved: "yes" },
+								},
+							],
+						},
+						sessionId,
+					},
+					"Bearer demo-a",
+					400,
+				],
+			])
+				expect((await post("chat", body, token)).status).toBe(status);
+			expect(requests).toHaveLength(before);
+		});
+
+		it("returns a settled continuation conflict without retrying", async () => {
+			const before = requests.length;
+			const response = await post("chat", {
+				message: approvalMessage("settled"),
+				sessionId,
+			});
+			expect(response.status).toBe(409);
+			expect(await response.json()).toMatchObject({
+				error: { code: "tool_approval_continuation_settled" },
+			});
+			await delay(250);
+			expect(requests).toHaveLength(before + 1);
 		});
 
 		if (["vite-hono-ai-sdk", "vite-fastapi-ai-sdk"].includes(directory)) {
@@ -551,6 +783,9 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					await page.getByLabel("Message", { exact: true }).fill("Hello");
 					await page.getByRole("button", { name: "Send / resend" }).click();
 					await page.getByText("Reply from BA", { exact: false }).waitFor();
+					await expect
+						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
+						.toBe(true);
 					await page
 						.getByRole("button", { name: "Regenerate", exact: true })
 						.click();
@@ -563,7 +798,10 @@ for (const [directory, prefix, separateFrontend] of examples) {
 						localStorage.getItem("blazing-agents-session"),
 					);
 					expect(saved).toMatch(/^ss_/);
+					const beforeReload = requests.length;
 					await page.reload();
+					await delay(250);
+					expect(requests).toHaveLength(beforeReload);
 					await page.getByText(`Session: ${saved}`, { exact: false }).waitFor();
 					await page.getByLabel("Application token").fill("demo-a");
 					await page
@@ -571,6 +809,9 @@ for (const [directory, prefix, separateFrontend] of examples) {
 						.fill("After reload");
 					await page.getByRole("button", { name: "Send / resend" }).click();
 					await page.getByText("Reply from BA", { exact: false }).waitFor();
+					await expect
+						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
+						.toBe(true);
 					expect(requests.at(-1).path).toContain(saved);
 					await page
 						.getByRole("button", { name: "New Session", exact: false })
@@ -580,23 +821,36 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							localStorage.getItem("blazing-agents-session"),
 						),
 					).toBeNull();
+					const beforeFailure = requests.length;
 					await page.getByLabel("Message", { exact: true }).fill("fail");
 					await page.getByRole("button", { name: "Send / resend" }).click();
-					await page.getByRole("alert").waitFor();
+					await expect.poll(() => requests.length).toBe(beforeFailure + 1);
+					await page
+						.getByRole("alert")
+						.filter({ hasText: "Fixture rejected input" })
+						.waitFor();
+					const afterFailure = requests.length;
+					await delay(350);
+					expect(requests).toHaveLength(afterFailure);
 					expect(
 						await page.getByLabel("Message", { exact: true }).inputValue(),
 					).toBe("fail");
 					await page.getByLabel("Message", { exact: true }).fill("Try again");
 					await page.getByRole("button", { name: "Send / resend" }).click();
 					await page.getByText("Reply from BA", { exact: false }).waitFor();
+					await expect
+						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
+						.toBe(true);
 					expect(requests.at(-1).path).toBe(`/v1/agents/${agentId}/sessions`);
 					expect(
 						await page.evaluate(() =>
 							localStorage.getItem("blazing-agents-session"),
 						),
 					).not.toBe(saved);
+					const beforeSlow = requests.length;
 					await page.getByLabel("Message", { exact: true }).fill("slow");
 					await page.getByRole("button", { name: "Send / resend" }).click();
+					await expect.poll(() => requests.length).toBe(beforeSlow + 1);
 					await page.getByRole("button", { name: "Stop", exact: true }).click();
 					await expect
 						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
@@ -604,6 +858,12 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					expect(
 						await page.getByLabel("Message", { exact: true }).inputValue(),
 					).toBe("slow");
+					await delay(350);
+					expect(requests).toHaveLength(beforeSlow + 1);
+					await page.reload();
+					await delay(350);
+					expect(requests).toHaveLength(beforeSlow + 1);
+					await page.getByLabel("Application token").fill("demo-a");
 					await page.getByLabel("Completion prompt").fill("Hello");
 					await page
 						.getByRole("button", { name: "Complete", exact: true })

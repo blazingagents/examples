@@ -21,7 +21,10 @@ A local HTTP fixture implements BA's chat and generation responses. Tests use
 the published BA SDKs and AI SDK hooks, so they catch integration errors in
 routing, authentication, session ownership across server restarts, headers,
 stream handling, and structured output validation. Browser journeys also cover
-reload/resume, regeneration, starting a new Session, errors, and Stop.
+reload/resume, regeneration, starting a new Session, errors, and Stop without
+automatically resending work. The upstream fixture requires canonical `messages`
+chat bodies and one streamed `/tool-approvals/continue` request per approval round.
+All six relays test current-round decisions, ownership, and settled conflicts.
 They require no BA account or model credentials and never load a development
 BA API key into requests.
 

@@ -1,5 +1,7 @@
 # Blazing Agents + Vite + Hono
 
+Uses `@blazingagents/sdk` 0.20.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
+
 A minimal React client using AI SDK hooks and a Hono relay running on Node.js.
 The browser receives only application bearer tokens. The Blazing Agents API key
 stays in the backend environment.
@@ -46,3 +48,5 @@ Build and type-check with:
 npm run typecheck
 npm run build
 ```
+
+Failed or stopped chats require an explicit resend. Reload restores the Session ID without restarting work.

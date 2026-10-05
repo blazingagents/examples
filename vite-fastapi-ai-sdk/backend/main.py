@@ -16,6 +16,7 @@ from blazing_agents import (
     BlazingAgentsError,
     FunctionContext,
     StreamError,
+    ToolApprovalDecisionInput,
     define_function,
 )
 from fastapi import FastAPI, Request
@@ -154,16 +155,63 @@ def valid_text_part(value: Any) -> bool:
 
 
 def valid_message(value: Any) -> bool:
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or not isinstance(value.get("id"), str):
         return False
-    if value.get("role") != "user" or not isinstance(value.get("id"), str):
+    if not value["id"] or value.get("role") not in ("user", "assistant"):
         return False
     parts = value.get("parts")
-    return (
-        isinstance(parts, list)
-        and bool(parts)
-        and all(valid_text_part(part) for part in parts)
+    if not isinstance(parts, list) or not parts:
+        return False
+    if value["role"] == "user":
+        return all(valid_text_part(part) for part in parts)
+    for part in parts:
+        if not isinstance(part, dict):
+            return False
+        kind = part.get("type")
+        if not isinstance(kind, str):
+            return False
+        if (
+            not (kind.startswith("tool-") or kind == "dynamic-tool")
+            or part.get("state") != "approval-responded"
+        ):
+            continue
+        if not isinstance(part.get("toolCallId"), str) or "input" not in part:
+            return False
+        if kind == "dynamic-tool" and not isinstance(part.get("toolName"), str):
+            return False
+        approval = part.get("approval")
+        if (
+            not isinstance(approval, dict)
+            or not isinstance(approval.get("id"), str)
+            or not approval["id"]
+        ):
+            return False
+        if not isinstance(approval.get("approved"), bool):
+            return False
+        if "reason" in approval and not isinstance(approval["reason"], str):
+            return False
+    return True
+
+
+def approval_decisions(message: dict[str, Any]) -> list[ToolApprovalDecisionInput]:
+    parts = message["parts"]
+    last_step = max(
+        (index for index, part in enumerate(parts) if part["type"] == "step-start"),
+        default=-1,
     )
+    decisions: list[ToolApprovalDecisionInput] = []
+    for part in parts[last_step + 1 :]:
+        if (
+            part["type"].startswith("tool-") or part["type"] == "dynamic-tool"
+        ) and part.get("state") == "approval-responded":
+            decision: ToolApprovalDecisionInput = {
+                "approval_id": part["approval"]["id"],
+                "approved": part["approval"]["approved"],
+            }
+            if "reason" in part["approval"]:
+                decision["reason"] = part["approval"]["reason"]
+            decisions.append(decision)
+    return decisions
 
 
 def upstream_headers(
@@ -207,15 +255,36 @@ async def chat(request: Request):
         kwargs["session_id"] = session_id
     client: AsyncBlazingAgents = request.app.state.blazing_agents
     try:
-        stream = await client.chat(
-            agent_id=agent_id,
-            functions=FUNCTIONS,
-            message=incoming["message"],
-            trigger=trigger if session_id else "submit-message",
-            user_id=owner,
-            metadata={"app": "vite-fastapi"},
-            **kwargs,
-        )
+        if incoming["message"]["role"] == "assistant":
+            if session_id is None:
+                return error(
+                    400,
+                    "invalid_request",
+                    "Tool approval requires an existing Session.",
+                )
+            decisions = approval_decisions(incoming["message"])
+            if not decisions:
+                return error(
+                    400,
+                    "invalid_request",
+                    "The message has no tool approval responses.",
+                )
+            stream = await client.continue_chat(
+                agent_id=agent_id,
+                session_id=session_id,
+                decisions=decisions,
+                functions=FUNCTIONS,
+            )
+        else:
+            stream = await client.chat(
+                agent_id=agent_id,
+                functions=FUNCTIONS,
+                message=incoming["message"],
+                trigger=trigger if session_id else "submit-message",
+                user_id=owner,
+                metadata={"app": "vite-fastapi"},
+                **kwargs,
+            )
     except BlazingAgentsError as exc:
         return relay_error(exc)
 
