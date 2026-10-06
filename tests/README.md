@@ -17,8 +17,9 @@ Hono, and Wrangler servers. It uses temporary SQLite/D1 databases and randomly
 allocated ports, and removes its processes and databases after the run.
 Playwright drives each of the five browser applications.
 
-A local HTTP fixture implements BA's chat and generation responses. Tests use
-the published BA SDKs and AI SDK hooks, so they catch integration errors in
+Local HTTP fixtures implement BA's chat, generation, and Session fork responses.
+Tests use the published BA SDKs and AI SDK hooks. The Session fork CLI uses
+the included SDK 0.21.0 and Python SDK 0.15.0 artifacts. These tests catch errors in
 routing, authentication, session ownership across server restarts, headers,
 stream handling, and structured output validation. Browser journeys also cover
 reload/resume, regeneration, starting a new Session, errors, and Stop without
