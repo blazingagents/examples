@@ -1,0 +1,18 @@
+{
+  "name": "@blazing-agents/example-session-fork",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env main.ts",
+    "check": "tsc --noEmit && ultracite check main.ts && uv run --no-project --with ./vendor/blazing_agents-0.15.0-py3-none-any.whl --with pyright pyright main.py && uvx ruff check main.py && uvx ruff format --check main.py",
+    "fix": "ultracite fix main.ts"
+  },
+  "dependencies": {
+    "@blazingagents/sdk": "file:vendor/blazingagents-sdk-0.21.0.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "7.0.2",
+    "ultracite": "7.10.2"
+  }
+}
