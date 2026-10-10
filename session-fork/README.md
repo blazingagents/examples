@@ -24,7 +24,7 @@ cp .env.example .env
 uv run --no-project --env-file .env --with ./vendor/blazing_agents-0.15.0-py3-none-any.whl python main.py
 ```
 
-The folder includes pinned TypeScript SDK 0.21.0 and Python SDK 0.15.0
+The folder includes pinned TypeScript SDK 0.22.0 and Python SDK 0.15.0
 packages. Keep `vendor/` when copying the example.
 
 After an uncertain outcome, retry with the same source Session, message ID,

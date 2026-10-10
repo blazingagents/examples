@@ -19,7 +19,7 @@ Playwright drives each of the five browser applications.
 
 Local HTTP fixtures implement BA's chat, generation, and Session fork responses.
 Tests use the published BA SDKs and AI SDK hooks. The Session fork CLI uses
-the included SDK 0.21.0 and Python SDK 0.15.0 artifacts. These tests catch errors in
+the included SDK 0.22.0 and Python SDK 0.15.0 artifacts. These tests catch errors in
 routing, authentication, session ownership across server restarts, headers,
 stream handling, and structured output validation. Browser journeys also cover
 reload/resume, regeneration, starting a new Session, errors, and Stop without
