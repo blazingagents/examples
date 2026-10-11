@@ -39,6 +39,11 @@ const coverage = process.env.EXAMPLES_COVERAGE_DIR
 	? {
 			NODE_V8_COVERAGE: join(process.env.EXAMPLES_COVERAGE_DIR, "node/raw"),
 			NODE_OPTIONS: `--import=${resolve("tests/coverage/flush.mjs")}`,
+			COVERAGE_FILE: join(
+				process.env.EXAMPLES_COVERAGE_DIR,
+				"python/raw/.coverage",
+			),
+			COVERAGE_PROCESS_START: resolve("tests/coverage/python.coveragerc"),
 		}
 	: {};
 
@@ -260,6 +265,16 @@ beforeAll(async () => {
 				clearTimeout(timer);
 				disconnected.add(body.messages[0].id);
 			});
+			return;
+		}
+		if (prompt === "unlocated") {
+			response.writeHead(200, {
+				"content-type": "text/event-stream",
+				"x-vercel-ai-ui-message-stream": "v1",
+			});
+			response.end(
+				'data: {"type":"start","messageId":"x"}\n\ndata: [DONE]\n\n',
+			);
 			return;
 		}
 		if (request.url.endsWith("/generation")) {
@@ -768,6 +783,185 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				.poll(() => disconnected.has(slowMessage.id), { timeout: 5000 })
 				.toBe(true);
 		});
+
+		if (directory === "vite-fastapi-ai-sdk") {
+			it("rejects malformed message shapes without upstream work", async () => {
+				const before = requests.length;
+				const assistant = (parts) => ({ id: "m", role: "assistant", parts });
+				const approval = { id: "a", approved: true };
+				const tool = (overrides) => ({
+					type: "tool-shippingQuote",
+					state: "approval-responded",
+					toolCallId: "call",
+					input: { country: "US" },
+					approval,
+					...overrides,
+				});
+				for (const invalid of [
+					"not-an-object",
+					{ id: 1 },
+					{ id: "", role: "user", parts: [{ type: "text", text: "x" }] },
+					{ id: "m", role: "system", parts: [{ type: "text", text: "x" }] },
+					{ id: "m", role: "user" },
+					{ id: "m", role: "user", parts: [] },
+					{ id: "m", role: "user", parts: ["x"] },
+					{ id: "m", role: "user", parts: [{ type: "image" }] },
+					{ id: "m", role: "user", parts: [{ type: "text" }] },
+					assistant(["x"]),
+					assistant([{ type: 1 }]),
+					assistant([
+						{
+							type: "tool-shippingQuote",
+							state: "approval-responded",
+							input: {},
+							approval,
+						},
+					]),
+					assistant([
+						{
+							type: "tool-shippingQuote",
+							state: "approval-responded",
+							toolCallId: "call",
+							approval,
+						},
+					]),
+					assistant([
+						{
+							type: "dynamic-tool",
+							state: "approval-responded",
+							toolCallId: "call",
+							input: {},
+							approval,
+						},
+					]),
+					assistant([tool({ approval: "x" })]),
+					assistant([tool({ approval: { id: 1, approved: true } })]),
+					assistant([tool({ approval: { id: "", approved: true } })]),
+					assistant([tool({ approval: { id: "a", approved: "yes" } })]),
+					assistant([
+						tool({ approval: { id: "a", approved: true, reason: 1 } }),
+					]),
+				]) {
+					expect((await post("chat", { message: invalid })).status).toBe(400);
+				}
+				for (const body of [
+					{ message: message(), sessionId: 5 },
+					{ message: message(), trigger: "bogus" },
+					{ message: message(), messageId: 5 },
+					{ message: message(), messageId: "" },
+				]) {
+					expect((await post("chat", body)).status).toBe(400);
+				}
+				for (const body of ["{", { prompt: 5 }]) {
+					expect((await post("completion", body)).status).toBe(400);
+				}
+				expect(requests).toHaveLength(before);
+			});
+
+			it("continues an approval without a reason", async () => {
+				const before = requests.length;
+				const noReason = approvalMessage();
+				noReason.parts.at(-1).approval = { id: "no-reason", approved: true };
+				const response = await post("chat", {
+					message: noReason,
+					sessionId,
+				});
+				expect(response.status).toBe(200);
+				await response.text();
+				const continuing = requests
+					.slice(before)
+					.find((call) => call.path.endsWith("/tool-approvals/continue"));
+				expect(continuing.body.decisions).toEqual([
+					{ approvalId: "no-reason", approved: true },
+				]);
+			});
+
+			it("maps upstream transport failures", async () => {
+				const unlocated = await post("chat", {
+					message: message("unlocated"),
+				});
+				expect(unlocated.status).toBe(502);
+				expect((await unlocated.json()).error.code).toBe("stream_error");
+
+				const port = await freePort();
+				const unreachable = start(directory, ["run", "start:test"], {
+					...env,
+					PORT: String(port),
+					SESSION_DB: join(temporary, "unreachable.db"),
+					BLAZING_AGENTS_BASE_URL: "http://127.0.0.1:1",
+				});
+				try {
+					const local = `http://127.0.0.1:${port}`;
+					await ready(local, unreachable);
+					const failed = await fetch(`${local}${prefix}/chat`, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							authorization: "Bearer demo-a",
+						},
+						body: JSON.stringify({ message: message() }),
+					});
+					expect(failed.status).toBe(502);
+					expect((await failed.json()).error.code).toBe("network_error");
+				} finally {
+					await stop(unreachable);
+				}
+			});
+
+			it("returns a server error when a required variable is missing", async () => {
+				const port = await freePort();
+				const server = start(directory, ["run", "start:test"], {
+					...env,
+					PORT: String(port),
+					SESSION_DB: join(temporary, "missing.db"),
+					BLAZING_AGENTS_AGENT_ID: undefined,
+				});
+				try {
+					const local = `http://127.0.0.1:${port}`;
+					await ready(local, server);
+					const before = requests.length;
+					const response = await fetch(`${local}${prefix}/chat`, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							authorization: "Bearer demo-a",
+						},
+						body: JSON.stringify({ message: message() }),
+					});
+					expect(response.status).toBe(500);
+					expect(requests).toHaveLength(before);
+				} finally {
+					await stop(server);
+				}
+			});
+
+			it("fails the chat when the session store cannot record ownership", async () => {
+				const port = await freePort();
+				const database = join(temporary, "broken.db");
+				const server = start(directory, ["run", "start:test"], {
+					...env,
+					PORT: String(port),
+					SESSION_DB: database,
+				});
+				try {
+					const local = `http://127.0.0.1:${port}`;
+					await ready(local, server);
+					await writeFile(database, "not sqlite");
+					const response = await fetch(`${local}${prefix}/chat`, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							authorization: "Bearer demo-a",
+						},
+						body: JSON.stringify({ message: message() }),
+					});
+					expect(response.status).toBe(500);
+					expect((await response.json()).error.code).toBe("internal_error");
+				} finally {
+					await stop(server);
+				}
+			});
+		}
 
 		if (directory === "vite-express-ai-sdk") {
 			it("answers the health route", async () => {

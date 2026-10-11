@@ -113,6 +113,11 @@ const coverage = globalThis.process.env.EXAMPLES_COVERAGE_DIR
 				"node/raw",
 			),
 			NODE_OPTIONS: `--import=${resolve("tests/coverage/flush.mjs")}`,
+			COVERAGE_FILE: join(
+				globalThis.process.env.EXAMPLES_COVERAGE_DIR,
+				"python/raw/.coverage",
+			),
+			COVERAGE_PROCESS_START: resolve("tests/coverage/python.coveragerc"),
 		}
 	: {};
 
@@ -159,6 +164,8 @@ for (const language of ["TypeScript", "Python"]) {
 						join(temporary, ".env"),
 						"--with",
 						"blazing_agents==0.15.0",
+						"--with",
+						"coverage==7.16.2",
 						"python",
 						"main.py",
 					];
@@ -201,6 +208,8 @@ for (const language of ["TypeScript", "Python"]) {
 							join(temporary, ".env-missing"),
 							"--with",
 							"blazing_agents==0.15.0",
+							"--with",
+							"coverage==7.16.2",
 							"python",
 							"main.py",
 						],

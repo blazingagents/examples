@@ -1,0 +1,7 @@
+[run]
+parallel = true
+sigterm = true
+branch = true
+include =
+    */vite-fastapi-ai-sdk/backend/main.py
+    */session-fork/main.py
