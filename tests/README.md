@@ -114,4 +114,17 @@ statements and branches per file on:
 - `vite-fastapi-ai-sdk/backend/main.py`
 - `session-fork/main.py`
 
-The Cloudflare Worker (workerd) is not yet measured.
+### Workerd
+
+`cloudflare-worker-relay/src/index.ts` is not measured: workerd's DevTools
+inspector does not implement `Profiler.startPreciseCoverage`. Connecting to
+the inspector exposed by `wrangler dev --inspector-port` (wrangler 4.143.0,
+workerd 2026-09-26) works — `Debugger.enable` returns a `debuggerId` and
+`Debugger.scriptParsed` events report the bundled
+`.wrangler/tmp/dev-*/index.js` plus its source map — but `Profiler.enable`
+is only echoed back without enabling the agent, and
+`Profiler.startPreciseCoverage` then fails with
+`{"code":-32000,"message":"Profiler is not enabled"}`. workerd intercepts
+the `Profiler` domain to provide its own CPU profiler
+(`Profiler.start`/`stop`), so V8's coverage agent stays disabled; see
+upstream issue cloudflare/workerd#2065.
