@@ -5,7 +5,7 @@
     "check": "biome format tests vitest.config.mjs && npm run check --workspaces --if-present && npm run build && npm run test:coverage",
     "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
-    "test:coverage": "rm -rf coverage/node && mkdir -p coverage/node/raw && EXAMPLES_COVERAGE_DIR=\"$PWD/coverage/node/raw\" vitest run && node tests/coverage/normalize.mjs coverage/node/raw && c8 report --config tests/coverage/node.c8rc.json"
+    "test:coverage": "rm -rf coverage/node coverage/browser && mkdir -p coverage/node/raw coverage/browser/raw && EXAMPLES_COVERAGE_DIR=\"$PWD/coverage\" vitest run && node tests/coverage/normalize.mjs coverage/node/raw && c8 report --config tests/coverage/node.c8rc.json && node tests/coverage/browser.mjs"
   },
   "workspaces": [
     "*"
@@ -17,7 +17,11 @@
     "@biomejs/biome": "^2.5.11",
     "@jridgewell/trace-mapping": "0.3.31",
     "c8": "12.0.0",
+    "istanbul-lib-coverage": "3.2.2",
+    "istanbul-lib-report": "3.0.1",
+    "istanbul-reports": "3.2.0",
     "playwright": "1.63.0",
+    "v8-to-istanbul": "9.3.0",
     "vitest": "5.0.2"
   }
 }

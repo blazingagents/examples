@@ -14,6 +14,7 @@
 		"tanstack-start-ai-sdk/src/server/relay.server.ts"
 	],
 	"checkCoverage": true,
+	"per-file": true,
 	"lines": 99,
 	"branches": 99,
 	"functions": 99,

@@ -67,5 +67,34 @@ Run `npm run build` first: `next start`, `vite preview`, and a
 production-static check all serve built output. Reports land in `coverage/node`
 (text table plus `coverage-summary.json`).
 
-Browser bundles, the Python command, and the Cloudflare Worker (workerd) are
-not yet measured.
+### Browser
+
+The Playwright journeys collect Chromium JavaScript coverage when
+`EXAMPLES_COVERAGE_DIR` is set: `page.coverage.startJSCoverage()` before the
+first navigation, one JSON dump per page reload into `coverage/browser/raw`
+(navigation discards coverage for already-loaded scripts, so the test flushes a
+segment before each reload). `tests/coverage/browser.mjs` remaps each entry
+through `v8-to-istanbul` — Vite dev modules carry inline `data:` maps;
+`vite preview`'s built chunks carry sibling `.js.map` files — merges them into
+an Istanbul map, adds zero entries for included files the page never loaded,
+and enforces 99% lines, branches, functions, and statements on:
+
+- `tanstack-start-ai-sdk/src/routes/index.tsx`
+- `vite-express-ai-sdk/src/App.tsx`
+- `vite-hono-ai-sdk/src/App.tsx`
+- `vite-fastapi-ai-sdk/src/App.tsx`
+
+Mounting-only UI files stay excluded: `main.tsx`, `__root.tsx`, `router.tsx`,
+`app/layout.tsx`, and `index.html`. `nextjs-ai-sdk/app/page.tsx` is also
+excluded: no production build remaps its client code honestly. With the
+default Turbopack build the map yields an empty function map and a
+provably-executed `{completion.error && <p>}` consequent still reports zero
+executions (post-reload scripts lose inner block ranges, so operands executed
+after navigation can never be counted); a `next build --webpack` fixes client
+remapping but ships degenerate *server* maps, which would silently degrade the
+Node-side `lib/server.ts` gate instead.
+
+Reports land in `coverage/browser` (text table, `coverage-final.json`, and
+`coverage-summary.json`) and are separate from the Node scope.
+
+The Python command and the Cloudflare Worker (workerd) are not yet measured.

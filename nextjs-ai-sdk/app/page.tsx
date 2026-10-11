@@ -79,12 +79,6 @@ export default function Page() {
 		chat.setMessages(completedMessages.current);
 	}
 	function regenerate() {
-		if (
-			// biome-ignore lint/suspicious/noUnnecessaryConditions: Stream callbacks update the synchronous duplicate-submit guard.
-			active.current ||
-			!completedMessages.current.some((message) => message.role === "assistant")
-		)
-			return;
 		active.current = true;
 		regenerating.current = true;
 		chat.clearError();

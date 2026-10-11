@@ -108,7 +108,10 @@ afterAll(async () => {
 
 const coverage = globalThis.process.env.EXAMPLES_COVERAGE_DIR
 	? {
-			NODE_V8_COVERAGE: globalThis.process.env.EXAMPLES_COVERAGE_DIR,
+			NODE_V8_COVERAGE: join(
+				globalThis.process.env.EXAMPLES_COVERAGE_DIR,
+				"node/raw",
+			),
 			NODE_OPTIONS: `--import=${resolve("tests/coverage/flush.mjs")}`,
 		}
 	: {};
