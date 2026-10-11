@@ -5,11 +5,11 @@
   "scripts": {
     "build": "vite build",
     "check": "npm run typecheck && npm run lint",
-    "dev": "concurrently -k \"node --experimental-strip-types --watch src/server.ts\" \"vite\"",
+    "dev": "concurrently -k \"PORT=${PORT:-8787} SESSION_DB=${SESSION_DB:-sessions.db} node --experimental-strip-types --watch src/server.ts\" \"vite\"",
     "fix": "ultracite fix src vite.config.ts",
     "lint": "ultracite check src vite.config.ts",
-    "start": "node --experimental-strip-types src/server.ts",
-    "start:test": "node --experimental-strip-types src/server.ts",
+    "start": "PORT=${PORT:-8787} SESSION_DB=${SESSION_DB:-sessions.db} node --experimental-strip-types src/server.ts",
+    "start:test": "PORT=${PORT:-8787} SESSION_DB=${SESSION_DB:-sessions.db} node --experimental-strip-types src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

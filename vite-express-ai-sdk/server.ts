@@ -6,7 +6,7 @@ import express, {
 	type Request,
 	type Response,
 } from "express";
-import { relayChat, relayCompletion } from "./server/relay.ts";
+import { env, relayChat, relayCompletion } from "./server/relay.ts";
 
 const app = express();
 app.use(express.raw({ type: "application/json", limit: "1mb" }));
@@ -36,7 +36,6 @@ function relay(
 			upstream.headers.forEach((value, name) => {
 				response.setHeader(name, value);
 			});
-			if (!upstream.body) return response.end();
 			await pipeline(
 				Readable.fromWeb(
 					upstream.body as unknown as import("node:stream/web").ReadableStream,
@@ -44,8 +43,7 @@ function relay(
 				response,
 			);
 		} catch (error) {
-			if (response.headersSent) response.destroy(error as Error);
-			else next(error);
+			next(error);
 		}
 	};
 }
@@ -67,7 +65,7 @@ if (process.env.NODE_ENV === "production") {
 	app.use(vite.middlewares);
 }
 
-const port = Number(process.env.PORT ?? 3000);
+const port = Number(env("PORT"));
 app.listen(port, "127.0.0.1", () => {
 	console.log(`Vite + Express listening on http://127.0.0.1:${port}`);
 });

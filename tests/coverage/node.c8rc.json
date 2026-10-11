@@ -1,0 +1,18 @@
+{
+	"tempDirectory": "coverage/node/raw",
+	"report-dir": "coverage/node",
+	"reporter": ["text", "json-summary"],
+	"all": true,
+	"include": [
+		"vite-express-ai-sdk/server.ts",
+		"vite-express-ai-sdk/server/relay.ts",
+		"vite-hono-ai-sdk/src/server.ts",
+		"structured-output/main.ts",
+		"session-fork/main.ts"
+	],
+	"checkCoverage": true,
+	"lines": 99,
+	"branches": 99,
+	"functions": 99,
+	"statements": 99
+}
