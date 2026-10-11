@@ -85,6 +85,14 @@ beforeAll(async () => {
 			.map(([key, value]) => `${key}=${value}`)
 			.join("\n"),
 	);
+	const missing = { ...env };
+	delete missing.BLAZING_AGENTS_MESSAGE_ID;
+	await writeFile(
+		join(temporary, ".env-missing"),
+		Object.entries(missing)
+			.map(([key, value]) => `${key}=${value}`)
+			.join("\n"),
+	);
 });
 
 afterAll(async () => {
@@ -99,15 +107,18 @@ afterAll(async () => {
 });
 
 async function run(command, args, overrides = {}) {
+	const environment = {
+		...globalThis.process.env,
+		...env,
+		UV_CACHE_DIR: join(tmpdir(), "ba-fork-uv-cache"),
+		...overrides,
+	};
+	for (const [key, value] of Object.entries(overrides))
+		if (value === undefined) delete environment[key];
 	const process = spawn(command, args, {
 		cwd: resolve("session-fork"),
 		detached: true,
-		env: {
-			...globalThis.process.env,
-			...env,
-			UV_CACHE_DIR: join(tmpdir(), "ba-fork-uv-cache"),
-			...overrides,
-		},
+		env: environment,
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	children.push(process);
@@ -161,5 +172,31 @@ for (const language of ["TypeScript", "Python"]) {
 		expect(failed.code).not.toBe(0);
 		expect(failed.stderr).toContain("Selected reply cannot be forked");
 		expect(requests.at(-1).headers["idempotency-key"]).toBe("unavailable");
+	}, 60000);
+
+	it(`${language} names a missing required variable and sends no request`, async () => {
+		const before = requests.length;
+		const missing =
+			language === "TypeScript"
+				? await run("npm", ["start", "--silent"], {
+						BLAZING_AGENTS_MESSAGE_ID: "",
+					})
+				: await run(
+						"uv",
+						[
+							"run",
+							"--no-project",
+							"--env-file",
+							join(temporary, ".env-missing"),
+							"--with",
+							"blazing_agents==0.15.0",
+							"python",
+							"main.py",
+						],
+						{ BLAZING_AGENTS_MESSAGE_ID: undefined },
+					);
+		expect(missing.code).not.toBe(0);
+		expect(missing.stderr).toContain("BLAZING_AGENTS_MESSAGE_ID");
+		expect(requests).toHaveLength(before);
 	}, 60000);
 }

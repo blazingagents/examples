@@ -15,7 +15,7 @@ function env(name: string): string {
 	return value;
 }
 
-const database = new DatabaseSync(process.env.SESSION_DB ?? "sessions.db");
+const database = new DatabaseSync(env("SESSION_DB"));
 database.exec(
 	"CREATE TABLE IF NOT EXISTS sessions (session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL)",
 );
@@ -85,5 +85,5 @@ app.post("/api/completion", (context) => relayCompletion(context.req.raw));
 serve({
 	fetch: app.fetch,
 	hostname: "127.0.0.1",
-	port: Number(process.env.PORT ?? 8787),
+	port: Number(env("PORT")),
 });

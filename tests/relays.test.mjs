@@ -56,13 +56,24 @@ function start(directory, args, env) {
 async function stop({ child }) {
 	if (child.exitCode !== null || child.signalCode !== null) return;
 	const exited = once(child, "exit");
-	process.kill(-child.pid, "SIGTERM");
-	await Promise.race([exited, delay(5000)]);
+	try {
+		process.kill(-child.pid, "SIGTERM");
+	} catch {}
+	// Wait for the whole group to exit so Node writes NODE_V8_COVERAGE output.
+	for (let attempt = 0; attempt < 100; attempt++) {
+		try {
+			process.kill(-child.pid, 0);
+		} catch {
+			return;
+		}
+		await delay(50);
+	}
 	try {
 		process.kill(-child.pid, "SIGKILL");
 	} catch (error) {
-		if (error.code !== "ESRCH") throw error;
+		if (error.code !== "ESRCH" && error.code !== "EPERM") throw error;
 	}
+	await Promise.race([exited, delay(5000)]);
 }
 
 async function ready(url, process) {
@@ -269,9 +280,10 @@ beforeAll(async () => {
 			location: `/v1/agents/${agentId}/sessions/${sessionId}`,
 		});
 		if (
-			prompt === "shipping quote" ||
+			["shipping quote", "shipping quote gb"].includes(prompt) ||
 			(continuationRoute && body.functions?.shippingQuote)
 		) {
+			const country = prompt === "shipping quote gb" ? "GB" : "US";
 			const id = `fc_${String(++sequence).padStart(16, "0")}`;
 			const send = (event) =>
 				response.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -304,7 +316,7 @@ beforeAll(async () => {
 				data: {
 					id,
 					name: "shippingQuote",
-					input: { country: "US" },
+					input: { country },
 					deadlineAt: new Date(Date.now() + 5000).toISOString(),
 				},
 				transient: true,
@@ -313,7 +325,7 @@ beforeAll(async () => {
 				type: "tool-input-available",
 				toolCallId: id,
 				toolName: "shippingQuote",
-				input: { country: "US" },
+				input: { country },
 			});
 			return;
 		}
@@ -744,6 +756,71 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				.toBe(true);
 		});
 
+		if (directory === "vite-express-ai-sdk") {
+			it("answers the health route", async () => {
+				expect((await fetch(`${url}/health`)).status).toBe(204);
+			});
+
+			it("fails startup with a missing required variable", async () => {
+				const command = start(directory, ["run", "start:test"], {
+					...env,
+					BLAZING_AGENTS_API_KEY: "",
+				});
+				const [code] = await once(command.child, "exit");
+				expect(code).not.toBe(0);
+				expect(command.output()).toContain(
+					"BLAZING_AGENTS_API_KEY is required",
+				);
+			});
+
+			it("serves the built frontend in production", async () => {
+				const port = await freePort();
+				const server = start(directory, ["start"], {
+					...env,
+					PORT: String(port),
+					SESSION_DB: join(temporary, "production.db"),
+				});
+				try {
+					const local = `http://127.0.0.1:${port}`;
+					await ready(local, server);
+					const response = await fetch(`${local}/chat/new`);
+					expect(response.status).toBe(200);
+					expect(await response.text()).toContain('id="root"');
+				} finally {
+					await stop(server);
+				}
+			});
+		}
+
+		if (directory === "vite-hono-ai-sdk") {
+			it("fails startup with a missing required variable", async () => {
+				const command = start(directory, ["run", "start:test"], {
+					...env,
+					BLAZING_AGENTS_API_KEY: "",
+				});
+				const [code] = await once(command.child, "exit");
+				expect(code).not.toBe(0);
+				expect(command.output()).toContain(
+					"BLAZING_AGENTS_API_KEY is required",
+				);
+			});
+
+			it("prices a quote for another supported country", async () => {
+				const before = requests.length;
+				const response = await post("chat", {
+					message: message("shipping quote gb"),
+					sessionId,
+				});
+				expect(response.status).toBe(200);
+				const output = await response.text();
+				expect(output).toContain('\\"amountMinor\\":499');
+				expect(requests.slice(before).at(-1).body.outcome.value).toEqual({
+					currency: "GBP",
+					amountMinor: 499,
+				});
+			});
+		}
+
 		if (worker) {
 			it("allows configured origins and exposes the session header", async () => {
 				const response = await fetch(`${url}/chat`, {
@@ -904,6 +981,34 @@ describe("structured-output", () => {
 				},
 			},
 		});
+	});
+
+	it("names a missing required variable and sends no request", async () => {
+		const before = requests.length;
+		const command = start(
+			"structured-output",
+			["start", "--", "Duplicate charge"],
+			{
+				BLAZING_AGENTS_API_KEY: "",
+				BLAZING_AGENTS_AGENT_ID: agentId,
+				BLAZING_AGENTS_BASE_URL: upstreamUrl,
+			},
+		);
+		const [code] = await once(command.child, "exit");
+		expect(code).not.toBe(0);
+		expect(command.output()).toContain("BLAZING_AGENTS_API_KEY is required");
+		expect(requests).toHaveLength(before);
+	});
+
+	it("uses the built-in ticket text when no prompt is given", async () => {
+		const command = start("structured-output", ["start"], {
+			BLAZING_AGENTS_API_KEY: "ba_test_server_only",
+			BLAZING_AGENTS_AGENT_ID: agentId,
+			BLAZING_AGENTS_BASE_URL: upstreamUrl,
+		});
+		const [code] = await once(command.child, "exit");
+		expect(code, command.output()).toBe(0);
+		expect(command.output()).toContain('"category": "billing"');
 	});
 });
 

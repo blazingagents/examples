@@ -5,13 +5,13 @@ import {
 	createCompletionRelay,
 } from "@blazingagents/sdk";
 
-function env(name: string): string {
+export function env(name: string): string {
 	const value = process.env[name];
 	if (!value) throw new Error(`${name} is required`);
 	return value;
 }
 
-const database = new DatabaseSync(process.env.SESSION_DB ?? "sessions.db");
+const database = new DatabaseSync(env("SESSION_DB"));
 database.exec(
 	"CREATE TABLE IF NOT EXISTS sessions (session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL)",
 );

@@ -37,3 +37,23 @@ mapping with your application's authentication.
 Wrangler's local proxy observes a disconnected reader when it next writes a
 chunk. The cancellation fixture therefore streams heartbeat chunks; cancellation
 during an idle upstream response is not covered.
+
+## Coverage
+
+`npm run test:coverage` runs the suite with `NODE_V8_COVERAGE` set, so every
+spawned Node process — including servers stopped by SIGTERM via
+`tests/coverage/flush.mjs` — writes V8 coverage. `c8` then reports on the files
+Node executes directly with `--experimental-strip-types` (which preserves source
+offsets), enforcing 99% lines, branches, functions, and statements:
+
+- `vite-express-ai-sdk/server.ts`
+- `vite-express-ai-sdk/server/relay.ts`
+- `vite-hono-ai-sdk/src/server.ts`
+- `structured-output/main.ts`
+- `session-fork/main.ts`
+
+Run `npm run build` first: a production-static check serves `dist/`. Reports
+land in `coverage/node` (text table plus `coverage-summary.json`).
+
+Framework-hosted server code (Next.js, TanStack Start), browser bundles, the
+Python command, and the Cloudflare Worker (workerd) are not yet measured.
