@@ -5,7 +5,7 @@
     "check": "biome format tests vitest.config.mjs && npm run check --workspaces --if-present && npm run build && npm run test:coverage",
     "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
-    "test:coverage": "rm -rf coverage/node coverage/browser && mkdir -p coverage/node/raw coverage/browser/raw && EXAMPLES_COVERAGE_DIR=\"$PWD/coverage\" vitest run && node tests/coverage/normalize.mjs coverage/node/raw && c8 report --config tests/coverage/node.c8rc.json && node tests/coverage/browser.mjs"
+    "test:coverage": "rm -rf coverage/node coverage/browser coverage/python && mkdir -p coverage/node/raw coverage/browser/raw coverage/python/raw && EXAMPLES_COVERAGE_DIR=\"$PWD/coverage\" vitest run && node tests/coverage/normalize.mjs coverage/node/raw && c8 report --config tests/coverage/node.c8rc.json && node tests/coverage/browser.mjs && node tests/coverage/python.mjs"
   },
   "workspaces": [
     "*"

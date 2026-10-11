@@ -13,7 +13,6 @@ from blazing_agents import (
     AsyncBlazingAgents,
     AsyncChatStream,
     AsyncCompletionStream,
-    BlazingAgentsError,
     FunctionContext,
     StreamError,
     ToolApprovalDecisionInput,
@@ -128,14 +127,14 @@ def error(
     )
 
 
-def relay_error(exc: BlazingAgentsError) -> JSONResponse:
+def relay_error(
+    exc: APIStatusError | StreamError | APIConnectionError,
+) -> JSONResponse:
     if isinstance(exc, APIStatusError):
         return error(exc.status_code, exc.code, str(exc), exc.request_id)
     if isinstance(exc, StreamError):
         return error(502, "stream_error", str(exc), exc.request_id)
-    if isinstance(exc, APIConnectionError):
-        return error(502, "network_error", "Unable to reach Blazing Agents.")
-    return error(500, "internal_error", "Request failed.")
+    return error(502, "network_error", "Unable to reach Blazing Agents.")
 
 
 async def body(request: Request) -> dict[str, Any] | None:
@@ -285,7 +284,7 @@ async def chat(request: Request):
                 metadata={"app": "vite-fastapi"},
                 **kwargs,
             )
-    except BlazingAgentsError as exc:
+    except (APIStatusError, StreamError, APIConnectionError) as exc:
         return relay_error(exc)
 
     if session_id is None:
@@ -323,7 +322,7 @@ async def completion(request: Request):
             user_id=owner,
             metadata={"app": "vite-fastapi"},
         )
-    except BlazingAgentsError as exc:
+    except (APIStatusError, StreamError, APIConnectionError) as exc:
         return relay_error(exc)
     return StreamingResponse(
         stream,

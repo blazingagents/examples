@@ -97,4 +97,21 @@ Node-side `lib/server.ts` gate instead.
 Reports land in `coverage/browser` (text table, `coverage-final.json`, and
 `coverage-summary.json`) and are separate from the Node scope.
 
-The Python command and the Cloudflare Worker (workerd) are not yet measured.
+### Python
+
+When `EXAMPLES_COVERAGE_DIR` is set, the spawn helpers also pass children
+`COVERAGE_FILE=<dir>/python/raw/.coverage` and
+`COVERAGE_PROCESS_START=tests/coverage/python.coveragerc`. The coverage.py
+`.pth` shim (installed via `--with coverage==7.16.2` in the FastAPI
+`start:test` command and the inline session-fork `uv run`) then auto-starts
+coverage in every measured Python process; `parallel = true` gives each
+process its own data file and `sigterm = true` plus uvicorn's graceful
+shutdown write data for SIGTERM-stopped servers. `tests/coverage/python.mjs`
+runs `coverage combine`, prints the text report, writes
+`coverage/python/coverage-final.json` and `report.txt`, and enforces 99%
+statements and branches per file on:
+
+- `vite-fastapi-ai-sdk/backend/main.py`
+- `session-fork/main.py`
+
+The Cloudflare Worker (workerd) is not yet measured.
