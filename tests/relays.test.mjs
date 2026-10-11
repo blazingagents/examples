@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -37,7 +37,7 @@ async function freePort() {
 
 const coverage = process.env.EXAMPLES_COVERAGE_DIR
 	? {
-			NODE_V8_COVERAGE: process.env.EXAMPLES_COVERAGE_DIR,
+			NODE_V8_COVERAGE: join(process.env.EXAMPLES_COVERAGE_DIR, "node/raw"),
 			NODE_OPTIONS: `--import=${resolve("tests/coverage/flush.mjs")}`,
 		}
 	: {};
@@ -895,9 +895,44 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				page.on("requestfailed", (request) =>
 					errors.push(request.url() + ": " + request.failure()?.errorText),
 				);
+				const browserRaw = process.env.EXAMPLES_COVERAGE_DIR
+					? join(process.env.EXAMPLES_COVERAGE_DIR, "browser/raw", directory)
+					: null;
+				let segment = 0;
+				const dump = async () => {
+					if (!browserRaw) return;
+					const entries = await page.coverage.stopJSCoverage();
+					await mkdir(browserRaw, { recursive: true });
+					await writeFile(
+						join(browserRaw, `${segment++}.json`),
+						JSON.stringify(entries),
+					);
+				};
+				const reload = async () => {
+					// Navigation discards coverage already collected for the same
+					// script, so flush a segment before each reload.
+					await dump();
+					await page.reload();
+					if (browserRaw)
+						await page.coverage.startJSCoverage({
+							resetOnNavigation: false,
+						});
+				};
 				try {
+					if (browserRaw) {
+						await mkdir(browserRaw, { recursive: true });
+						await page.coverage.startJSCoverage({
+							resetOnNavigation: false,
+						});
+					}
 					await page.goto(frontendUrl);
 					await page.getByLabel("Application token").fill("demo-a");
+					await page.evaluate(() =>
+						document
+							.querySelector('input[aria-label="Message"]')
+							.closest("form")
+							.requestSubmit(),
+					);
 					await page.getByLabel("Message", { exact: true }).fill("Hello");
 					await page.getByRole("button", { name: "Send / resend" }).click();
 					await page.getByText("Reply from BA", { exact: false }).waitFor();
@@ -912,12 +947,27 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							document.querySelector('input[aria-label="Message"]').disabled ===
 							false,
 					);
+					await page.getByLabel("Message", { exact: true }).fill("fail");
+					await page.getByRole("button", { name: "Send / resend" }).click();
+					await page
+						.getByRole("alert")
+						.filter({ hasText: "Fixture rejected" })
+						.waitFor();
+					await page.getByLabel("Completion prompt").fill("fail");
+					await page
+						.getByRole("button", { name: "Complete", exact: true })
+						.click();
+					await page
+						.getByRole("alert")
+						.filter({ hasText: "Fixture rejected" })
+						.nth(1)
+						.waitFor();
 					const saved = await page.evaluate(() =>
 						localStorage.getItem("blazing-agents-session"),
 					);
 					expect(saved).toMatch(/^ss_/);
 					const beforeReload = requests.length;
-					await page.reload();
+					await reload();
 					await delay(250);
 					expect(requests).toHaveLength(beforeReload);
 					await page.getByText(`Session: ${saved}`, { exact: false }).waitFor();
@@ -965,10 +1015,21 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							localStorage.getItem("blazing-agents-session"),
 						),
 					).not.toBe(saved);
+					await page.getByLabel("Message", { exact: true }).fill("discarded");
+					await page.getByRole("button", { name: "Discard input" }).click();
+					expect(
+						await page.getByLabel("Message", { exact: true }).inputValue(),
+					).toBe("");
 					const beforeSlow = requests.length;
 					await page.getByLabel("Message", { exact: true }).fill("slow");
 					await page.getByRole("button", { name: "Send / resend" }).click();
 					await expect.poll(() => requests.length).toBe(beforeSlow + 1);
+					await page.evaluate(() =>
+						document
+							.querySelector('input[aria-label="Message"]')
+							.closest("form")
+							.requestSubmit(),
+					);
 					await page.getByRole("button", { name: "Stop", exact: true }).click();
 					await expect
 						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
@@ -978,10 +1039,18 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					).toBe("slow");
 					await delay(350);
 					expect(requests).toHaveLength(beforeSlow + 1);
-					await page.reload();
+					await reload();
 					await delay(350);
 					expect(requests).toHaveLength(beforeSlow + 1);
 					await page.getByLabel("Application token").fill("demo-a");
+					await page.getByLabel("Completion prompt").fill("fail");
+					await page
+						.getByRole("button", { name: "Complete", exact: true })
+						.click();
+					await page
+						.getByRole("alert")
+						.filter({ hasText: "Fixture rejected" })
+						.waitFor();
 					await page.getByLabel("Completion prompt").fill("Hello");
 					await page
 						.getByRole("button", { name: "Complete", exact: true })
@@ -992,6 +1061,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 						`${error.message}\nBrowser errors: ${errors.join("\n")}\nPage: ${await page.locator("body").innerText()}`,
 					);
 				} finally {
+					await dump();
 					await page.close();
 				}
 			}, 60000);
