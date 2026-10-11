@@ -4,11 +4,11 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env main.ts",
-    "check": "tsc --noEmit && ultracite check main.ts && uv run --no-project --with ./vendor/blazing_agents-0.15.0-py3-none-any.whl --with pyright pyright main.py && uvx ruff check main.py && uvx ruff format --check main.py",
+    "check": "tsc --noEmit && ultracite check main.ts && uv run --no-project --with blazing_agents==0.15.0 --with pyright pyright main.py && uvx ruff check main.py && uvx ruff format --check main.py",
     "fix": "ultracite fix main.ts"
   },
   "dependencies": {
-    "@blazingagents/sdk": "file:vendor/blazingagents-sdk-0.22.0.tgz"
+    "@blazingagents/sdk": "0.22.0"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

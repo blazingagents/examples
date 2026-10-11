@@ -136,7 +136,7 @@ for (const language of ["TypeScript", "Python"]) {
 						"--env-file",
 						join(temporary, ".env"),
 						"--with",
-						"./vendor/blazing_agents-0.15.0-py3-none-any.whl",
+						"blazing_agents==0.15.0",
 						"python",
 						"main.py",
 					];

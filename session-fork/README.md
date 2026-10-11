@@ -21,11 +21,10 @@ Python requires Python 3.12+ and `uv`:
 
 ```sh
 cp .env.example .env
-uv run --no-project --env-file .env --with ./vendor/blazing_agents-0.15.0-py3-none-any.whl python main.py
+uv run --no-project --env-file .env --with blazing_agents==0.15.0 python main.py
 ```
 
-The folder includes pinned TypeScript SDK 0.22.0 and Python SDK 0.15.0
-packages. Keep `vendor/` when copying the example.
+The scripts pin TypeScript SDK 0.22.0 and Python SDK 0.15.0.
 
 After an uncertain outcome, retry with the same source Session, message ID,
 and idempotency key to recover the same child. Use a fresh key for a different
