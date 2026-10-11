@@ -40,20 +40,32 @@ during an idle upstream response is not covered.
 
 ## Coverage
 
-`npm run test:coverage` runs the suite with `NODE_V8_COVERAGE` set, so every
-spawned Node process — including servers stopped by SIGTERM via
-`tests/coverage/flush.mjs` — writes V8 coverage. `c8` then reports on the files
-Node executes directly with `--experimental-strip-types` (which preserves source
-offsets), enforcing 99% lines, branches, functions, and statements:
+`npm run test:coverage` runs the suite with `EXAMPLES_COVERAGE_DIR` set, which
+makes the spawn helpers give every child `NODE_V8_COVERAGE` and the
+`tests/coverage/flush.mjs` preload — servers stopped by SIGTERM still write V8
+coverage. `tests/coverage/normalize.mjs` then flattens sectioned source maps
+and absolutizes map sources so `c8` can remap bundled framework output to the
+authored files, enforcing 99% lines, branches, functions, and statements on:
 
 - `vite-express-ai-sdk/server.ts`
 - `vite-express-ai-sdk/server/relay.ts`
 - `vite-hono-ai-sdk/src/server.ts`
 - `structured-output/main.ts`
 - `session-fork/main.ts`
+- `nextjs-ai-sdk/lib/server.ts`
+- `tanstack-start-ai-sdk/src/server/relay.server.ts`
 
-Run `npm run build` first: a production-static check serves `dist/`. Reports
-land in `coverage/node` (text table plus `coverage-summary.json`).
+The first five Node executes directly with `--experimental-strip-types`, which
+preserves source offsets. The framework files are measured through their
+production servers — `next start` and `vite preview`, whose server builds ship
+flat source maps that remap to the authored code. Dev-mode output cannot be
+measured reliably: Turbopack duplicates modules per route bundle with
+inconsistent remap fidelity, and Vite's module runner hides its source maps
+behind a nonstandard `sourceMa` comment.
 
-Framework-hosted server code (Next.js, TanStack Start), browser bundles, the
-Python command, and the Cloudflare Worker (workerd) are not yet measured.
+Run `npm run build` first: `next start`, `vite preview`, and a
+production-static check all serve built output. Reports land in `coverage/node`
+(text table plus `coverage-summary.json`).
+
+Browser bundles, the Python command, and the Cloudflare Worker (workerd) are
+not yet measured.

@@ -106,11 +106,19 @@ afterAll(async () => {
 	await rm(temporary, { recursive: true, force: true });
 });
 
+const coverage = globalThis.process.env.EXAMPLES_COVERAGE_DIR
+	? {
+			NODE_V8_COVERAGE: globalThis.process.env.EXAMPLES_COVERAGE_DIR,
+			NODE_OPTIONS: `--import=${resolve("tests/coverage/flush.mjs")}`,
+		}
+	: {};
+
 async function run(command, args, overrides = {}) {
 	const environment = {
 		...globalThis.process.env,
 		...env,
 		UV_CACHE_DIR: join(tmpdir(), "ba-fork-uv-cache"),
+		...coverage,
 		...overrides,
 	};
 	for (const [key, value] of Object.entries(overrides))

@@ -4,11 +4,11 @@
   "scripts": {
     "build": "next build",
     "check": "npm run typecheck && npm run lint",
-    "dev": "next dev",
+    "dev": "SESSION_DB=${SESSION_DB:-sessions.db} next dev",
     "fix": "ultracite fix app lib next.config.ts",
     "lint": "ultracite check app lib next.config.ts",
-    "start:test": "next dev --hostname 127.0.0.1 --port ${PORT:-3000}",
-    "start": "next start",
+    "start:test": "SESSION_DB=${SESSION_DB:-sessions.db} next start --hostname 127.0.0.1 --port ${PORT:-3000}",
+    "start": "SESSION_DB=${SESSION_DB:-sessions.db} next start",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -3,12 +3,15 @@
 	"report-dir": "coverage/node",
 	"reporter": ["text", "json-summary"],
 	"all": true,
+	"excludeAfterRemap": true,
 	"include": [
 		"vite-express-ai-sdk/server.ts",
 		"vite-express-ai-sdk/server/relay.ts",
 		"vite-hono-ai-sdk/src/server.ts",
 		"structured-output/main.ts",
-		"session-fork/main.ts"
+		"session-fork/main.ts",
+		"nextjs-ai-sdk/lib/server.ts",
+		"tanstack-start-ai-sdk/src/server/relay.server.ts"
 	],
 	"checkCoverage": true,
 	"lines": 99,

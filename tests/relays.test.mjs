@@ -35,11 +35,24 @@ async function freePort() {
 	return port;
 }
 
+const coverage = process.env.EXAMPLES_COVERAGE_DIR
+	? {
+			NODE_V8_COVERAGE: process.env.EXAMPLES_COVERAGE_DIR,
+			NODE_OPTIONS: `--import=${resolve("tests/coverage/flush.mjs")}`,
+		}
+	: {};
+
 function start(directory, args, env) {
 	const child = spawn("npm", args, {
 		cwd: resolve(directory),
 		detached: true,
-		env: { ...process.env, NODE_ENV: "development", ...env, CI: "1" },
+		env: {
+			...process.env,
+			NODE_ENV: "development",
+			...env,
+			...coverage,
+			CI: "1",
+		},
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	let output = "";
@@ -786,6 +799,34 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					const response = await fetch(`${local}/chat/new`);
 					expect(response.status).toBe(200);
 					expect(await response.text()).toContain('id="root"');
+				} finally {
+					await stop(server);
+				}
+			});
+		}
+
+		if (["nextjs-ai-sdk", "tanstack-start-ai-sdk"].includes(directory)) {
+			it("returns a server error when a required variable is missing", async () => {
+				const port = await freePort();
+				const server = start(directory, ["run", "start:test"], {
+					...env,
+					PORT: String(port),
+					BLAZING_AGENTS_API_KEY: "",
+				});
+				try {
+					const local = `http://127.0.0.1:${port}`;
+					await ready(local, server);
+					const before = requests.length;
+					const response = await fetch(`${local}${prefix}/chat`, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							authorization: "Bearer demo-a",
+						},
+						body: JSON.stringify({ message: message() }),
+					});
+					expect(response.status).toBe(500);
+					expect(requests).toHaveLength(before);
 				} finally {
 					await stop(server);
 				}
