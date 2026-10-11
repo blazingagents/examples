@@ -14,7 +14,7 @@ function env(name: string): string {
 let sessionDatabase: DatabaseSync | undefined;
 
 function database(): DatabaseSync {
-	sessionDatabase ??= new DatabaseSync(process.env.SESSION_DB ?? "sessions.db");
+	sessionDatabase ??= new DatabaseSync(env("SESSION_DB"));
 	sessionDatabase.exec(
 		"CREATE TABLE IF NOT EXISTS sessions (session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL)",
 	);

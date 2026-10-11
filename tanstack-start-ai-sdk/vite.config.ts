@@ -4,4 +4,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
 	plugins: [tanstackStart(), react()],
+	environments: {
+		ssr: { build: { sourcemap: true } },
+	},
 });

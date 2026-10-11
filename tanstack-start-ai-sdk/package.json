@@ -5,10 +5,10 @@
   "scripts": {
     "build": "vite build",
     "check": "npm run typecheck && npm run lint",
-    "dev": "vite dev",
+    "dev": "SESSION_DB=${SESSION_DB:-sessions.db} vite dev",
     "fix": "ultracite fix src/server src/router.tsx src/routes vite.config.ts",
     "lint": "ultracite check src/server src/router.tsx src/routes vite.config.ts",
-    "start:test": "vite --host 127.0.0.1 --port ${PORT:-3000}",
+    "start:test": "SESSION_DB=${SESSION_DB:-sessions.db} vite preview --host 127.0.0.1 --port ${PORT:-3000}",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
