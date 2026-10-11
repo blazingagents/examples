@@ -31,8 +31,8 @@ npm install
 ```
 
 The chat and structured-output examples use `@blazingagents/sdk` 0.20.0; the
-FastAPI backend uses `blazing_agents` 0.14.0. Session fork includes SDK 0.21.0
-and Python SDK 0.15.0 artifacts. Each example documents its setup and run command.
+FastAPI backend uses `blazing_agents` 0.14.0. Session fork pins SDK 0.22.0
+and Python SDK 0.15.0. Each example documents its setup and run command.
 
 ## Prerequisites
 
