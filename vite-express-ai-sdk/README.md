@@ -1,6 +1,6 @@
 # Vite + Express + AI SDK
 
-Uses `@blazingagents/sdk` 0.20.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
+Uses `@blazingagents/sdk` 0.36.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
 
 This example runs a React/Vite UI and an Express relay on one Node server. The browser sends an application bearer token; Express derives the trusted user ID and durably authorizes each Blazing Agents Session through SQLite. The Blazing Agents API key never reaches browser code.
 

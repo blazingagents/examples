@@ -1,6 +1,6 @@
 # Blazing Agents + Vite + Hono
 
-Uses `@blazingagents/sdk` 0.20.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
+Uses `@blazingagents/sdk` 0.36.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
 
 A minimal React client using AI SDK hooks and a Hono relay running on Node.js.
 The browser receives only application bearer tokens. The Blazing Agents API key

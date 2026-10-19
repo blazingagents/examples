@@ -9,6 +9,7 @@ import { chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const agentId = "ag_0123456789abcdef";
+const turnId = "turn_0123456789abcdef";
 const origin = "http://localhost:5173";
 const requests = [];
 const disconnected = new Set();
@@ -252,6 +253,7 @@ beforeAll(async () => {
 			response.writeHead(200, {
 				"content-type": "text/event-stream",
 				"x-vercel-ai-ui-message-stream": "v1",
+				"x-ba-turn-id": turnId,
 				location: `/v1/agents/${agentId}/sessions/ss_${String(++sequence).padStart(16, "0")}`,
 			});
 			response.write('data: {"type":"start","messageId":"slow-assistant"}\n\n');
@@ -271,6 +273,7 @@ beforeAll(async () => {
 			response.writeHead(200, {
 				"content-type": "text/event-stream",
 				"x-vercel-ai-ui-message-stream": "v1",
+				"x-ba-turn-id": turnId,
 			});
 			response.end(
 				'data: {"type":"start","messageId":"x"}\n\ndata: [DONE]\n\n',
@@ -305,6 +308,7 @@ beforeAll(async () => {
 			"content-type": "text/event-stream",
 			"x-vercel-ai-ui-message-stream": "v1",
 			"x-request-id": "fixture-chat",
+			"x-ba-turn-id": turnId,
 			location: `/v1/agents/${agentId}/sessions/${sessionId}`,
 		});
 		if (

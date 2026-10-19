@@ -30,9 +30,9 @@ cd examples/nextjs-ai-sdk
 npm install
 ```
 
-The chat and structured-output examples use `@blazingagents/sdk` 0.20.0; the
-FastAPI backend uses `blazing_agents` 0.14.0. Session fork pins SDK 0.22.0
-and Python SDK 0.15.0. Each example documents its setup and run command.
+Every example uses `@blazingagents/sdk` 0.36.0, and the Python code (the
+FastAPI backend and the Session fork script) uses `blazing_agents` 0.28.0. Each
+example documents its setup and run command.
 
 ## Prerequisites
 
