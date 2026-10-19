@@ -1,6 +1,6 @@
 # Classify a support ticket
 
-Uses `@blazingagents/sdk` 0.20.0.
+Uses `@blazingagents/sdk` 0.36.0.
 
 Use BA's structured generation API to turn a support ticket into a category,
 summary, and urgency flag. A Zod schema defines the requested JSON shape and

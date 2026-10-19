@@ -1,6 +1,6 @@
 # TanStack Start + AI SDK
 
-Uses `@blazingagents/sdk` 0.20.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
+Uses `@blazingagents/sdk` 0.36.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
 
 This example uses TanStack Start server routes to keep the Blazing Agents API key on the server. The browser sends an application bearer token; the backend derives a trusted user ID and persists Session ownership in SQLite.
 

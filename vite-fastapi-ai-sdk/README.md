@@ -1,6 +1,6 @@
 # Vite + FastAPI + AI SDK
 
-Uses `@blazingagents/sdk` 0.20.0. The backend uses `blazing_agents` 0.14.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
+Uses `@blazingagents/sdk` 0.36.0. The backend uses `blazing_agents` 0.28.0. The relay supports one streamed approval continuation; the sample UI has no approval controls.
 
 This example pairs a small React/Vite UI with a FastAPI relay built on the Blazing Agents Python SDK. The browser uses an application token; FastAPI maps it to a trusted user ID, keeps the Blazing Agents key server-side, and persists Session ownership in SQLite.
 
