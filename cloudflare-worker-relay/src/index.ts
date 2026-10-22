@@ -2,36 +2,16 @@ import {
 	BlazingAgents,
 	createChatRelay,
 	createCompletionRelay,
-	type SessionOwnershipStore,
 } from "@blazingagents/sdk";
 
 interface Env {
 	ALLOWED_ORIGINS: string;
 	APP_USER_A_TOKEN: string;
 	APP_USER_B_TOKEN: string;
-	BLAZING_AGENTS_AGENT_ID: string;
 	BLAZING_AGENTS_API_KEY: string;
 	BLAZING_AGENTS_BASE_URL: string;
-	SESSIONS: D1Database;
-}
-
-class D1Sessions implements SessionOwnershipStore {
-	constructor(private readonly database: D1Database) {}
-
-	async ownerOf(sessionId: string) {
-		const row = await this.database
-			.prepare("SELECT user_id FROM sessions WHERE session_id = ?")
-			.bind(sessionId)
-			.first<{ user_id: string }>();
-		return row?.user_id;
-	}
-
-	async recordOwner(sessionId: string, userId: string) {
-		await this.database
-			.prepare("INSERT INTO sessions (session_id, user_id) VALUES (?, ?)")
-			.bind(sessionId, userId)
-			.run();
-	}
+	BLAZING_AGENTS_MODEL: string;
+	BLAZING_AGENTS_PROVIDER_ID: string;
 }
 
 export default {
@@ -55,34 +35,41 @@ export default {
 			{ once: true },
 		);
 		const relayRequest = new Request(request, { signal: abort.signal });
-		const resolveContext = (relayRequest: Request) => {
+		/** Each signed-in user gets their own Agent, and with it their own Workspace. */
+		const agentFor = async (userId: string) => {
+			const user = client.forUser(userId);
+			const [agent] = (await user.agents.list({ limit: 1 })).data;
+			return (
+				agent ??
+				(await user.agents.create({
+					name: "Chat assistant",
+					providerId: env.BLAZING_AGENTS_PROVIDER_ID,
+					model: env.BLAZING_AGENTS_MODEL,
+				}))
+			);
+		};
+		const resolveContext = async (relayRequest: Request) => {
 			const token = relayRequest.headers
 				.get("authorization")
 				?.match(/^Bearer (.+)$/)?.[1];
-			if (!token) return Promise.resolve(null);
+			if (!token) return null;
 			const userId =
 				token === env.APP_USER_A_TOKEN
 					? "user-a"
 					: token === env.APP_USER_B_TOKEN
 						? "user-b"
 						: undefined;
-			return Promise.resolve(
-				userId
-					? {
-							agentId: env.BLAZING_AGENTS_AGENT_ID,
-							metadata: { app: "cloudflare-worker" },
-							userId,
-						}
-					: null,
-			);
+			if (!userId) return null;
+			const agent = await agentFor(userId);
+			return {
+				agentId: agent.id,
+				metadata: { app: "cloudflare-worker" },
+				userId,
+			};
 		};
 		const relay =
 			new URL(request.url).pathname === "/chat"
-				? createChatRelay({
-						client,
-						resolveContext,
-						sessions: new D1Sessions(env.SESSIONS),
-					})
+				? createChatRelay({ client, resolveContext })
 				: new URL(request.url).pathname === "/completion"
 					? createCompletionRelay({ client, resolveContext })
 					: undefined;

@@ -10,7 +10,8 @@ describe("missing demo authentication configuration", () => {
 		vi.stubEnv("APP_USER_B_TOKEN", undefined);
 		vi.stubEnv("BLAZING_AGENTS_API_KEY", "ba_test");
 		vi.stubEnv("BLAZING_AGENTS_BASE_URL", "http://127.0.0.1:1");
-		vi.stubEnv("BLAZING_AGENTS_AGENT_ID", "ag_0123456789abcdef");
+		vi.stubEnv("BLAZING_AGENTS_PROVIDER_ID", "prv_0123456789abcdef");
+		vi.stubEnv("BLAZING_AGENTS_MODEL", "openrouter/test-model");
 		for (const relay of [relayChat, relayCompletion]) {
 			const response = await relay(
 				new Request("http://localhost/api/chat", {
@@ -34,7 +35,8 @@ describe("missing demo authentication configuration", () => {
 					ALLOWED_ORIGINS: "http://localhost:5173",
 					BLAZING_AGENTS_API_KEY: "ba_test",
 					BLAZING_AGENTS_BASE_URL: "http://127.0.0.1:1",
-					BLAZING_AGENTS_AGENT_ID: "ag_0123456789abcdef",
+					BLAZING_AGENTS_PROVIDER_ID: "prv_0123456789abcdef",
+					BLAZING_AGENTS_MODEL: "openrouter/test-model",
 				},
 			);
 			expect(response.status).toBe(401);

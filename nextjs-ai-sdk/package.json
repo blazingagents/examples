@@ -4,16 +4,16 @@
   "scripts": {
     "build": "next build",
     "check": "npm run typecheck && npm run lint",
-    "dev": "SESSION_DB=${SESSION_DB:-sessions.db} next dev",
+    "dev": "next dev",
     "fix": "ultracite fix app lib next.config.ts",
     "lint": "ultracite check app lib next.config.ts",
-    "start:test": "SESSION_DB=${SESSION_DB:-sessions.db} next start --hostname 127.0.0.1 --port ${PORT:-3000}",
-    "start": "SESSION_DB=${SESSION_DB:-sessions.db} next start",
+    "start:test": "next start --hostname 127.0.0.1 --port ${PORT:-3000}",
+    "start": "next start",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.87",
-    "@blazingagents/sdk": "0.36.0",
+    "@blazingagents/sdk": "0.43.0",
     "ai": "7.0.84",
     "next": "16.3.3",
     "react": "19.2.4",

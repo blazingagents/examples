@@ -1,13 +1,12 @@
 # Classify a support ticket
 
-Uses `@blazingagents/sdk` 0.36.0.
-
 Use BA's structured generation API to turn a support ticket into a category,
 summary, and urgency flag. A Zod schema defines the requested JSON shape and
 validates the result before the application uses it.
 
-Requires Node.js 24+, a BA API key, and a published Agent configured with a
-Provider and model that supports structured output. Run from this directory:
+Requires Node.js 24+, a BA API key, and an active Agent with a Provider and a
+model that supports structured output. The script only runs the Agent, so a
+read-only key (`ba_read_…`) is enough. Run from this directory:
 
 ```sh
 cp .env.example .env

@@ -1,25 +1,71 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const agentId = "ag_0123456789abcdef";
+const providerId = "prv_0123456789abcdef";
+const model = "openrouter/test-model";
 const turnId = "turn_0123456789abcdef";
 const origin = "http://localhost:5173";
+/** Turn work the relays send upstream. */
 const requests = [];
+/** Agent lookups and creations, kept apart so Turn assertions stay exact. */
+const agentRequests = [];
+const agents = new Map();
+const sessionOwners = new Map();
 const disconnected = new Set();
 const functionCalls = new Map();
 let sequence = 0;
 let upstream;
 let upstreamUrl;
 let browser;
-let temporary;
 const children = [];
+
+const agentOf = (user) => `ag_${user.replace("-", "").padEnd(16, "0")}`;
+const agentA = agentOf("user-a");
+const agentB = agentOf("user-b");
+
+function agentRecord(user, body) {
+	const now = new Date().toISOString();
+	return {
+		id: agentOf(user),
+		tenantId: "ten_0123456789abcdef",
+		name: body.name,
+		model: body.model,
+		thinkingLevel: null,
+		providerId: body.providerId,
+		workspaceId: `ws_${user.replace("-", "").padEnd(16, "0")}`,
+		autoCompaction: true,
+		compactionReserveTokens: 16384,
+		memoryInjectionEnabled: false,
+		tools: [],
+		instructions: "",
+		userId: user,
+		metadata: {},
+		mcpConnectionIds: [],
+		approvalInChat: { default: "full", overrides: [] },
+		approvalInTasks: { default: "full", overrides: [] },
+		avatarUrl: null,
+		createdAt: now,
+		updatedAt: now,
+		status: "active",
+	};
+}
+
+function notFound(response) {
+	response.writeHead(404, {
+		"content-type": "application/json",
+		"x-request-id": "fixture-not-found",
+	});
+	response.end(
+		JSON.stringify({ error: { code: "not_found", message: "Not found." } }),
+	);
+}
 
 const message = (text = "Hello") => ({
 	id: `user-${++sequence}`,
@@ -109,16 +155,35 @@ async function ready(url, process) {
 }
 
 beforeAll(async () => {
-	temporary = await mkdtemp(join(tmpdir(), "ba-examples-"));
 	upstream = createServer(async (request, response) => {
 		let raw = "";
 		for await (const chunk of request) raw += chunk;
-		const body = JSON.parse(raw);
-		requests.push({
+		const body = raw ? JSON.parse(raw) : undefined;
+		const user = request.headers["x-ba-user-id"];
+		const call = {
 			path: request.url,
 			body,
 			authorization: request.headers.authorization,
-		});
+			user,
+		};
+		if (request.url.split("?")[0] === "/v1/agents") {
+			agentRequests.push({ ...call, method: request.method });
+			response.setHeader("content-type", "application/json");
+			if (request.method === "POST") {
+				agents.set(user, agentRecord(user, body));
+				response.writeHead(201);
+				response.end(JSON.stringify(agents.get(user)));
+				return;
+			}
+			response.end(
+				JSON.stringify({
+					data: agents.has(user) ? [agents.get(user)] : [],
+					nextCursor: null,
+				}),
+			);
+			return;
+		}
+		requests.push(call);
 		const functionRoute = request.url.match(
 			/\/function-calls\/(fc_[A-Za-z0-9]{16})\/(claim|result)$/,
 		);
@@ -161,13 +226,16 @@ beforeAll(async () => {
 			call.finish(body.outcome);
 			return;
 		}
-		const chatRoute = new RegExp(
-			`^/v1/agents/${agentId}/sessions(?:/ss_[A-Za-z0-9]{16})?$`,
-		).test(request.url);
-		const continuationRoute = new RegExp(
-			`^/v1/agents/${agentId}/sessions/ss_[A-Za-z0-9]{16}/tool-approvals/continue$`,
-		).test(request.url);
-		const generationRoute = request.url === `/v1/agents/${agentId}/generation`;
+		const chatRoute =
+			/^\/v1\/agents\/ag_[A-Za-z0-9]{16}\/sessions(?:\/ss_[A-Za-z0-9]{16})?$/.test(
+				request.url,
+			);
+		const continuationRoute =
+			/^\/v1\/agents\/ag_[A-Za-z0-9]{16}\/sessions\/ss_[A-Za-z0-9]{16}\/tool-approvals\/continue$/.test(
+				request.url,
+			);
+		const generationRoute =
+			/^\/v1\/agents\/ag_[A-Za-z0-9]{16}\/generation$/.test(request.url);
 		if (
 			(!chatRoute && !generationRoute && !continuationRoute) ||
 			(chatRoute &&
@@ -184,7 +252,6 @@ beforeAll(async () => {
 								"messages",
 								"trigger",
 								"messageId",
-								"userId",
 								"metadata",
 								"functions",
 							].includes(key),
@@ -199,6 +266,17 @@ beforeAll(async () => {
 					},
 				}),
 			);
+			return;
+		}
+		const routeAgent = request.url.split("/")[3];
+		const routeSession = request.url.match(
+			/\/sessions\/(ss_[A-Za-z0-9]{16})/,
+		)?.[1];
+		if (
+			routeAgent !== (user ? agents.get(user)?.id : agentId) ||
+			(routeSession && sessionOwners.get(routeSession) !== user)
+		) {
+			notFound(response);
 			return;
 		}
 		if (continuationRoute) {
@@ -250,11 +328,13 @@ beforeAll(async () => {
 			return;
 		}
 		if (prompt === "slow") {
+			const slowSession = `ss_${String(++sequence).padStart(16, "0")}`;
+			sessionOwners.set(slowSession, user);
 			response.writeHead(200, {
 				"content-type": "text/event-stream",
 				"x-vercel-ai-ui-message-stream": "v1",
 				"x-ba-turn-id": turnId,
-				location: `/v1/agents/${agentId}/sessions/ss_${String(++sequence).padStart(16, "0")}`,
+				location: `/v1/agents/${routeAgent}/sessions/${slowSession}`,
 			});
 			response.write('data: {"type":"start","messageId":"slow-assistant"}\n\n');
 			const heartbeat = setInterval(
@@ -299,17 +379,14 @@ beforeAll(async () => {
 			return;
 		}
 		const sessionId =
-			request.url.split("/").at(-1) === "sessions"
-				? `ss_${String(++sequence).padStart(16, "0")}`
-				: continuationRoute
-					? request.url.split("/").at(-3)
-					: request.url.split("/").at(-1);
+			routeSession ?? `ss_${String(++sequence).padStart(16, "0")}`;
+		sessionOwners.set(sessionId, user);
 		response.writeHead(200, {
 			"content-type": "text/event-stream",
 			"x-vercel-ai-ui-message-stream": "v1",
 			"x-request-id": "fixture-chat",
 			"x-ba-turn-id": turnId,
-			location: `/v1/agents/${agentId}/sessions/${sessionId}`,
+			location: `/v1/agents/${routeAgent}/sessions/${sessionId}`,
 		});
 		if (
 			["shipping quote", "shipping quote gb"].includes(prompt) ||
@@ -386,7 +463,6 @@ afterAll(async () => {
 		upstream.closeAllConnections();
 		await new Promise((resolve) => upstream.close(resolve));
 	}
-	if (temporary) await rm(temporary, { recursive: true, force: true });
 });
 
 const examples = [
@@ -420,18 +496,19 @@ for (const [directory, prefix, separateFrontend] of examples) {
 		}
 
 		beforeAll(async () => {
+			agents.clear();
+			agentRequests.length = 0;
 			const port = await freePort();
 			url = `http://127.0.0.1:${port}`;
 			env = {
 				PORT: String(port),
 				BLAZING_AGENTS_API_KEY: "ba_test_server_only",
-				BLAZING_AGENTS_AGENT_ID: agentId,
 				BLAZING_AGENTS_BASE_URL: upstreamUrl,
+				BLAZING_AGENTS_PROVIDER_ID: providerId,
+				BLAZING_AGENTS_MODEL: model,
 				APP_USER_A_TOKEN: "demo-a",
 				APP_USER_B_TOKEN: "demo-b",
 				ALLOWED_ORIGINS: origin,
-				SESSION_DB: join(temporary, `${directory}.db`),
-				WRANGLER_STATE_PATH: join(temporary, directory),
 				WRANGLER_SEND_METRICS: "false",
 			};
 			const server = start(
@@ -480,6 +557,43 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				).toBe(401);
 			}
 			expect(requests).toHaveLength(before);
+			expect(agentRequests).toEqual([]);
+		});
+
+		it("gives each signed-in user their own Agent, created once", async () => {
+			const before = requests.length;
+			for (const token of ["Bearer demo-a", "Bearer demo-a", "Bearer demo-b"]) {
+				const response = await post("completion", { prompt: "Hello" }, token);
+				expect(response.status).toBe(200);
+				await response.text();
+			}
+			const lookup = (user) => ({
+				method: "GET",
+				path: "/v1/agents?limit=1",
+				user,
+			});
+			const creation = (user) => ({
+				method: "POST",
+				path: "/v1/agents",
+				user,
+				body: { name: "Chat assistant", providerId, model },
+			});
+			expect(agentRequests).toMatchObject([
+				lookup("user-a"),
+				creation("user-a"),
+				lookup("user-a"),
+				lookup("user-b"),
+				creation("user-b"),
+			]);
+			for (const call of agentRequests)
+				expect(call.authorization).toBe("Bearer ba_test_server_only");
+			expect(
+				requests.slice(before).map(({ path, user }) => ({ path, user })),
+			).toEqual([
+				{ path: `/v1/agents/${agentA}/generation`, user: "user-a" },
+				{ path: `/v1/agents/${agentA}/generation`, user: "user-a" },
+				{ path: `/v1/agents/${agentB}/generation`, user: "user-b" },
+			]);
 		});
 
 		it("rejects malformed input before calling BA", async () => {
@@ -491,7 +605,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			expect(requests).toHaveLength(before);
 		});
 
-		it("streams a chat and records ownership from server authentication", async () => {
+		it("streams a chat as the authenticated user, ignoring browser-sent identity", async () => {
 			const sentMessage = message();
 			const response = await post("chat", {
 				message: sentMessage,
@@ -505,12 +619,10 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			expect(sessionId).toMatch(/^ss_[A-Za-z0-9]{16}$/);
 			expect(await response.text()).toContain("Reply from BA");
 			expect(requests.at(-1)).toMatchObject({
-				path: `/v1/agents/${agentId}/sessions`,
+				path: `/v1/agents/${agentA}/sessions`,
 				authorization: "Bearer ba_test_server_only",
-				body: {
-					userId: "user-a",
-					messages: [sentMessage],
-				},
+				user: "user-a",
+				body: { messages: [sentMessage] },
 			});
 		});
 
@@ -526,11 +638,11 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				expect(response.status).toBe(200);
 				await response.text();
 				expect(requests.at(-1)).toMatchObject({
-					path: `/v1/agents/${agentId}/sessions/${sessionId}`,
+					path: `/v1/agents/${agentA}/sessions/${sessionId}`,
+					user: "user-a",
 					body: {
 						trigger,
 						messageId: "assistant-1",
-						userId: "user-a",
 						messages: [sentMessage],
 					},
 				});
@@ -590,7 +702,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				calls.filter((call) => call.path.endsWith("/tool-approvals/continue")),
 			).toHaveLength(1);
 			expect(calls[0].path).toBe(
-				`/v1/agents/${agentId}/sessions/${sessionId}/tool-approvals/continue`,
+				`/v1/agents/${agentA}/sessions/${sessionId}/tool-approvals/continue`,
 			);
 			expect(calls[0].body.decisions).toEqual([
 				{ approvalId: "current", approved: true, reason: "Confirmed" },
@@ -608,7 +720,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			}
 		});
 
-		it("rejects unowned or incomplete approvals without upstream work", async () => {
+		it("rejects incomplete approvals without upstream work", async () => {
 			const before = requests.length;
 			for (const [body, token, status] of [
 				[
@@ -645,7 +757,6 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					"Bearer demo-a",
 					400,
 				],
-				[{ message: approvalMessage(), sessionId }, "Bearer demo-b", 403],
 				[{ message: approvalMessage(), sessionId }, null, 401],
 				[
 					{
@@ -728,24 +839,32 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			expect(
 				(await post("chat", { message: message(), sessionId }, "Bearer demo-b"))
 					.status,
-			).toBe(403);
+			).toBe(404);
 		}, 120000);
 
-		it("denies another user and unknown sessions without an upstream call", async () => {
+		it("answers another user's and unknown Sessions with the API's 404", async () => {
 			const before = requests.length;
-			expect(
-				(await post("chat", { message: message(), sessionId }, "Bearer demo-b"))
-					.status,
-			).toBe(403);
-			expect(
-				(
-					await post("chat", {
-						message: message(),
-						sessionId: "ss_zzzzzzzzzzzzzzzz",
-					})
-				).status,
-			).toBe(403);
-			expect(requests).toHaveLength(before);
+			for (const [body, token, user] of [
+				[{ message: message(), sessionId }, "Bearer demo-b", "user-b"],
+				[{ message: approvalMessage(), sessionId }, "Bearer demo-b", "user-b"],
+				[
+					{ message: message(), sessionId: "ss_zzzzzzzzzzzzzzzz" },
+					"Bearer demo-a",
+					"user-a",
+				],
+			]) {
+				const response = await post("chat", body, token);
+				expect(response.status).toBe(404);
+				expect(response.headers.get("x-request-id")).toBe("fixture-not-found");
+				expect(await response.json()).toMatchObject({
+					error: { code: "not_found" },
+				});
+				expect(requests.at(-1)).toMatchObject({
+					path: expect.stringContaining(`/sessions/${body.sessionId}`),
+					user,
+				});
+			}
+			expect(requests).toHaveLength(before + 3);
 		});
 
 		it("streams completion text and propagates upstream errors", async () => {
@@ -891,7 +1010,6 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				const unreachable = start(directory, ["run", "start:test"], {
 					...env,
 					PORT: String(port),
-					SESSION_DB: join(temporary, "unreachable.db"),
 					BLAZING_AGENTS_BASE_URL: "http://127.0.0.1:1",
 				});
 				try {
@@ -917,13 +1035,13 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				const server = start(directory, ["run", "start:test"], {
 					...env,
 					PORT: String(port),
-					SESSION_DB: join(temporary, "missing.db"),
-					BLAZING_AGENTS_AGENT_ID: undefined,
+					BLAZING_AGENTS_MODEL: undefined,
 				});
 				try {
 					const local = `http://127.0.0.1:${port}`;
 					await ready(local, server);
 					const before = requests.length;
+					const lookupsBefore = agentRequests.length;
 					const response = await fetch(`${local}${prefix}/chat`, {
 						method: "POST",
 						headers: {
@@ -934,33 +1052,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					});
 					expect(response.status).toBe(500);
 					expect(requests).toHaveLength(before);
-				} finally {
-					await stop(server);
-				}
-			});
-
-			it("fails the chat when the session store cannot record ownership", async () => {
-				const port = await freePort();
-				const database = join(temporary, "broken.db");
-				const server = start(directory, ["run", "start:test"], {
-					...env,
-					PORT: String(port),
-					SESSION_DB: database,
-				});
-				try {
-					const local = `http://127.0.0.1:${port}`;
-					await ready(local, server);
-					await writeFile(database, "not sqlite");
-					const response = await fetch(`${local}${prefix}/chat`, {
-						method: "POST",
-						headers: {
-							"content-type": "application/json",
-							authorization: "Bearer demo-a",
-						},
-						body: JSON.stringify({ message: message() }),
-					});
-					expect(response.status).toBe(500);
-					expect((await response.json()).error.code).toBe("internal_error");
+					expect(agentRequests).toHaveLength(lookupsBefore);
 				} finally {
 					await stop(server);
 				}
@@ -989,7 +1081,6 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				const server = start(directory, ["start"], {
 					...env,
 					PORT: String(port),
-					SESSION_DB: join(temporary, "production.db"),
 				});
 				try {
 					const local = `http://127.0.0.1:${port}`;
@@ -1207,7 +1298,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					await expect
 						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
 						.toBe(true);
-					expect(requests.at(-1).path).toBe(`/v1/agents/${agentId}/sessions`);
+					expect(requests.at(-1).path).toBe(`/v1/agents/${agentA}/sessions`);
 					expect(
 						await page.evaluate(() =>
 							localStorage.getItem("blazing-agents-session"),
