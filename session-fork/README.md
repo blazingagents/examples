@@ -47,7 +47,7 @@ Python requires Python 3.12+ and `uv`:
 
 ```sh
 cp .env.example .env
-uv run --no-project --env-file .env --with blazing_agents==0.30.1 python main.py
+uv run --no-project --env-file .env --with blazing_agents==0.31.0 python main.py
 ```
 
 After an uncertain outcome, retry with the same source Session, message ID,
