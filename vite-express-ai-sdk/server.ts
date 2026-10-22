@@ -53,11 +53,11 @@ app.post("/chat", relay(relayChat));
 app.post("/completion", relay(relayCompletion));
 
 if (process.env.NODE_ENV === "production") {
-	app.use(express.static(fileURLToPath(new URL("dist", import.meta.url))));
+	/** With `root`, a dot directory above the checkout does not hide the files. */
+	const dist = fileURLToPath(new URL("dist", import.meta.url));
+	app.use(express.static(dist));
 	app.use((_request, response) =>
-		response.sendFile(
-			fileURLToPath(new URL("dist/index.html", import.meta.url)),
-		),
+		response.sendFile("index.html", { root: dist }),
 	);
 } else if (process.env.NODE_ENV !== "test") {
 	const { createServer } = await import("vite");
