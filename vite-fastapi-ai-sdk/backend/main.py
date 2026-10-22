@@ -1,11 +1,9 @@
 import json
 import os
 import re
-import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from blazing_agents import (
     APIConnectionError,
@@ -13,6 +11,7 @@ from blazing_agents import (
     AsyncBlazingAgents,
     AsyncChatStream,
     AsyncCompletionStream,
+    AsyncUserClient,
     FunctionContext,
     StreamError,
     ToolApprovalDecisionInput,
@@ -24,7 +23,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 SESSION_ID = re.compile(r"^ss_[A-Za-z0-9]{16}$")
-DATABASE = Path(os.getenv("SESSION_DB", "sessions.db"))
 
 
 class ShippingInput(BaseModel):
@@ -68,33 +66,21 @@ def user_id(request: Request) -> str | None:
     return None
 
 
-def initialize_database() -> None:
-    with sqlite3.connect(DATABASE) as database:
-        database.execute(
-            "CREATE TABLE IF NOT EXISTS sessions "
-            "(session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL)"
-        )
-
-
-def owner_of(session_id: str) -> str | None:
-    with sqlite3.connect(DATABASE) as database:
-        row = database.execute(
-            "SELECT user_id FROM sessions WHERE session_id = ?", (session_id,)
-        ).fetchone()
-    return row[0] if row else None
-
-
-def record_owner(session_id: str, owner: str) -> None:
-    with sqlite3.connect(DATABASE) as database:
-        database.execute(
-            "INSERT INTO sessions (session_id, user_id) VALUES (?, ?)",
-            (session_id, owner),
-        )
+async def agent_for(user: AsyncUserClient) -> str:
+    """Return the signed-in user's own Agent, which comes with its own Workspace."""
+    provider_id = required("BLAZING_AGENTS_PROVIDER_ID")
+    model = required("BLAZING_AGENTS_MODEL")
+    page = await user.agents.list(limit=1)
+    if page.data:
+        return page.data[0].id
+    agent = await user.agents.create(
+        name="Chat assistant", provider_id=provider_id, model=model
+    )
+    return agent.id
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    initialize_database()
     client = AsyncBlazingAgents(
         api_key=required("BLAZING_AGENTS_API_KEY"),
         base_url=required("BLAZING_AGENTS_BASE_URL").rstrip("/"),
@@ -237,8 +223,6 @@ async def chat(request: Request):
         not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id)
     ):
         return error(400, "invalid_request", "Invalid request body.")
-    if session_id is not None and owner_of(session_id) != owner:
-        return error(403, "forbidden", "Session is not available.")
     trigger = incoming.get("trigger", "submit-message")
     if trigger not in ("submit-message", "regenerate-message"):
         return error(400, "invalid_request", "Invalid request body.")
@@ -246,14 +230,15 @@ async def chat(request: Request):
     if message_id is not None and (not isinstance(message_id, str) or not message_id):
         return error(400, "invalid_request", "Invalid request body.")
 
-    agent_id = required("BLAZING_AGENTS_AGENT_ID")
     kwargs: dict[str, Any] = {}
     if message_id is not None:
         kwargs["message_id"] = message_id
     if session_id is not None:
         kwargs["session_id"] = session_id
     client: AsyncBlazingAgents = request.app.state.blazing_agents
+    user = client.for_user(owner)
     try:
+        agent_id = await agent_for(user)
         if incoming["message"]["role"] == "assistant":
             if session_id is None:
                 return error(
@@ -268,31 +253,23 @@ async def chat(request: Request):
                     "invalid_request",
                     "The message has no tool approval responses.",
                 )
-            stream = await client.continue_chat(
+            stream = await user.continue_chat(
                 agent_id=agent_id,
                 session_id=session_id,
                 decisions=decisions,
                 functions=FUNCTIONS,
             )
         else:
-            stream = await client.chat(
+            stream = await user.chat(
                 agent_id=agent_id,
                 functions=FUNCTIONS,
                 message=incoming["message"],
                 trigger=trigger if session_id else "submit-message",
-                user_id=owner,
                 metadata={"app": "vite-fastapi"},
                 **kwargs,
             )
     except (APIStatusError, StreamError, APIConnectionError) as exc:
         return relay_error(exc)
-
-    if session_id is None:
-        try:
-            record_owner(cast(str, stream.session_id), owner)
-        except sqlite3.Error:
-            await stream.aclose()
-            return error(500, "internal_error", "Request failed.")
 
     headers = upstream_headers(stream)
     headers["x-vercel-ai-ui-message-stream"] = "v1"
@@ -315,11 +292,11 @@ async def completion(request: Request):
     if not isinstance(prompt, str) or not prompt.strip():
         return error(400, "invalid_request", "Invalid request body.")
     client: AsyncBlazingAgents = request.app.state.blazing_agents
+    user = client.for_user(owner)
     try:
-        stream = await client.completion_stream(
-            agent_id=required("BLAZING_AGENTS_AGENT_ID"),
+        stream = await user.completion_stream(
+            agent_id=await agent_for(user),
             prompt=prompt.strip(),
-            user_id=owner,
             metadata={"app": "vite-fastapi"},
         )
     except (APIStatusError, StreamError, APIConnectionError) as exc:

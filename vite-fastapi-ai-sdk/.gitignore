@@ -2,5 +2,4 @@
 .env
 __pycache__/
 dist/
-sessions.db*
 *.tsbuildinfo

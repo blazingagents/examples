@@ -1,3 +1,2 @@
 .env
 dist/
-sessions.db*

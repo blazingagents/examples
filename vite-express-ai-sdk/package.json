@@ -5,16 +5,16 @@
   "scripts": {
     "build": "vite build",
     "check": "npm run typecheck && npm run lint",
-    "dev": "PORT=${PORT:-3000} SESSION_DB=${SESSION_DB:-sessions.db} node --experimental-strip-types server.ts",
+    "dev": "PORT=${PORT:-3000} node --experimental-strip-types server.ts",
     "fix": "ultracite fix src server server.ts",
     "lint": "ultracite check src server server.ts",
-    "start": "PORT=${PORT:-3000} SESSION_DB=${SESSION_DB:-sessions.db} NODE_ENV=production node --experimental-strip-types server.ts",
-    "start:test": "PORT=${PORT:-3000} SESSION_DB=${SESSION_DB:-sessions.db} NODE_ENV=test node --experimental-strip-types server.ts",
+    "start": "PORT=${PORT:-3000} NODE_ENV=production node --experimental-strip-types server.ts",
+    "start:test": "PORT=${PORT:-3000} NODE_ENV=test node --experimental-strip-types server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.87",
-    "@blazingagents/sdk": "0.36.0",
+    "@blazingagents/sdk": "0.43.0",
     "ai": "7.0.84",
     "express": "5.2.1",
     "react": "19.2.4",
