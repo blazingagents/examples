@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env main.ts",
-    "check": "tsc --noEmit && ultracite check main.ts && uv run --no-project --with blazing_agents==0.31.0 --with pyright pyright main.py && uvx ruff check main.py && uvx ruff format --check main.py",
+    "check": "tsc --noEmit && ultracite check main.ts && uv run --no-project --with blazing_agents==0.32.0 --with pyright pyright main.py && uvx ruff check main.py && uvx ruff format --check main.py",
     "fix": "ultracite fix main.ts"
   },
   "dependencies": {
