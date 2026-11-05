@@ -17,7 +17,8 @@ interface Env {
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const origin = request.headers.get("origin");
-		if (!origin || !env.ALLOWED_ORIGINS.split(",").includes(origin)) {
+		const allowed = env.ALLOWED_ORIGINS.split(",").map((value) => value.trim());
+		if (!origin || !allowed.includes(origin)) {
 			return Response.json({ error: "Origin not allowed." }, { status: 403 });
 		}
 		if (request.method === "OPTIONS") {

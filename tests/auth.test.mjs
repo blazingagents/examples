@@ -42,4 +42,26 @@ describe("missing demo authentication configuration", () => {
 			expect(response.status).toBe(401);
 		}
 	});
+
+	it("the Worker trims spaces around comma-separated ALLOWED_ORIGINS entries", async () => {
+		const response = await worker.fetch(
+			new Request("http://localhost/chat", {
+				method: "OPTIONS",
+				headers: { origin: "http://localhost:5173" },
+			}),
+			{
+				ALLOWED_ORIGINS: " http://localhost:5173 , https://app.example ",
+				BLAZING_AGENTS_API_KEY: "ba_test",
+				BLAZING_AGENTS_BASE_URL: "http://127.0.0.1:1",
+				BLAZING_AGENTS_PROVIDER_ID: "prv_0123456789abcdef",
+				BLAZING_AGENTS_MODEL: "openrouter/test-model",
+				APP_USER_A_TOKEN: "token-a",
+				APP_USER_B_TOKEN: "token-b",
+			},
+		);
+		expect(response.status).toBe(204);
+		expect(response.headers.get("access-control-allow-origin")).toBe(
+			"http://localhost:5173",
+		);
+	});
 });
