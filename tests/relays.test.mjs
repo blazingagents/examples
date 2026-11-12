@@ -484,6 +484,10 @@ for (const [directory, prefix, separateFrontend] of examples) {
 		const worker = directory === "cloudflare-worker-relay";
 
 		function post(path, body, token = "Bearer demo-a") {
+			const sent =
+				path === "chat" && typeof body === "object"
+					? { op: "chat", ...body }
+					: body;
 			return fetch(`${url}${prefix}/${path}`, {
 				method: "POST",
 				headers: {
@@ -491,7 +495,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					origin,
 					...(token ? { authorization: token } : {}),
 				},
-				body: typeof body === "string" ? body : JSON.stringify(body),
+				body: typeof sent === "string" ? sent : JSON.stringify(sent),
 			});
 		}
 
@@ -894,7 +898,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					origin,
 					authorization: "Bearer demo-a",
 				},
-				body: JSON.stringify({ message: slowMessage }),
+				body: JSON.stringify({ op: "chat", message: slowMessage }),
 				signal: controller.signal,
 			});
 			expect(response.status).toBe(200);
@@ -1021,7 +1025,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							"content-type": "application/json",
 							authorization: "Bearer demo-a",
 						},
-						body: JSON.stringify({ message: message() }),
+						body: JSON.stringify({ op: "chat", message: message() }),
 					});
 					expect(failed.status).toBe(502);
 					expect((await failed.json()).error.code).toBe("network_error");
@@ -1048,7 +1052,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							"content-type": "application/json",
 							authorization: "Bearer demo-a",
 						},
-						body: JSON.stringify({ message: message() }),
+						body: JSON.stringify({ op: "chat", message: message() }),
 					});
 					expect(response.status).toBe(500);
 					expect(requests).toHaveLength(before);
@@ -1112,7 +1116,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							"content-type": "application/json",
 							authorization: "Bearer demo-a",
 						},
-						body: JSON.stringify({ message: message() }),
+						body: JSON.stringify({ op: "chat", message: message() }),
 					});
 					expect(response.status).toBe(500);
 					expect(requests).toHaveLength(before);
