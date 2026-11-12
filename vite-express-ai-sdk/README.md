@@ -12,7 +12,7 @@ npm install
 node --env-file=.env --run dev
 ```
 
-Open `http://127.0.0.1:3000`, enter either configured application token, and send a chat or completion. The first chat saves its server-minted Session ID to `localStorage`. Later turns and page reloads resume it. `New session` starts over, and `Regenerate` retries the last Session turn. `Stop` aborts chat and `Cancel` aborts completion. Relay and streaming errors appear in the page.
+Open `http://127.0.0.1:3000`, enter either configured application token, and send a chat or completion. `useBlazingAgentsChat` saves the first chat's server-minted Session ID to `localStorage`. Later turns and page reloads resume it, and a reload restores the stored transcript through the relay's `history` operation. Sending while a reply streams steers that Turn, and the button reads `Steer`. `New session` starts over, and `Regenerate` retries the last Session turn. `Stop` aborts chat and `Cancel` aborts completion. Relay and streaming errors appear in the page.
 
 For a production build:
 
@@ -23,4 +23,4 @@ node --env-file=.env --run start
 
 Replace the two-token demo authentication with your application's session verification in production. Keep `BLAZING_AGENTS_API_KEY` on the server. Never put it in `VITE_*` or browser code.
 
-Failed or stopped chats require an explicit resend. Reload restores the Session ID without restarting work.
+A failed or stopped message returns to the input for an explicit resend. Reload restores the stored transcript without restarting work.

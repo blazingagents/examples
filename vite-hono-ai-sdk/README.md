@@ -35,8 +35,10 @@ The Agents this relay creates use the default `full` chat approval policy.
 See [backend functions](https://docs.blazingagents.com/agents/tools/backend-functions)
 for approval resume, cancellation, and application identity.
 
-`useChat` stores the server-minted Session ID in `localStorage`, so a reload
-resumes it. **New session** clears the browser's current Session ID.
+`useBlazingAgentsChat` keeps the server-minted Session ID in `localStorage`, so
+a reload resumes it and reads the stored transcript back through the relay's
+`history` operation. Sending while a reply streams steers that Turn, and the
+button reads Steer. **New session** clears the browser's current Session.
 Streaming errors appear in the page, and both chat and completion expose a
 cancel button whose abort signal reaches Blazing Agents.
 
@@ -55,4 +57,4 @@ npm run typecheck
 npm run build
 ```
 
-Failed or stopped chats require an explicit resend. Reload restores the Session ID without restarting work.
+A failed or stopped message returns to the input for an explicit resend. Reload restores the stored transcript without restarting work.
