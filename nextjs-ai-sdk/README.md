@@ -12,8 +12,8 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`, enter the configured application token, and send a chat or completion. Chat Session IDs are saved to `localStorage` and reused after reload. Replace the two-token demo authentication with your application's session verification in production. `Stop` aborts the active stream. `Regenerate` reruns the last response in the user's Session.
+Open `http://localhost:3000`, enter the configured application token, and send a chat or completion. `useBlazingAgentsChat` saves the chat Session ID to `localStorage`, reuses it after reload, and restores the stored transcript through the relay's `history` operation. Sending while a reply streams steers that Turn, and the button reads `Steer`. Replace the two-token demo authentication with your application's session verification in production. `Stop` aborts the active stream. `Regenerate` reruns the last response in the user's Session.
 
 Never put `BLAZING_AGENTS_API_KEY` in `NEXT_PUBLIC_*` or browser code.
 
-Failed or stopped chats require an explicit resend. Reload restores the Session ID without restarting work.
+A failed or stopped message returns to the input for an explicit resend. Reload restores the stored transcript without restarting work.

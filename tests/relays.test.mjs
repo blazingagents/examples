@@ -20,6 +20,12 @@ const agents = new Map();
 const sessionOwners = new Map();
 const disconnected = new Set();
 const functionCalls = new Map();
+/** Stored messages per Session, as `/messages` serves them. */
+const transcripts = new Map();
+/** Takes a steer receipt for each Session whose Turn is streaming and steerable. */
+const liveTurns = new Map();
+/** Small enough that a short transcript spans several pages. */
+const historyPageSize = 2;
 let sequence = 0;
 let upstream;
 let upstreamUrl;
@@ -64,6 +70,35 @@ function notFound(response) {
 	});
 	response.end(
 		JSON.stringify({ error: { code: "not_found", message: "Not found." } }),
+	);
+}
+
+const storedMessage = (item) => ({
+	branchable: true,
+	id: item.id,
+	role: item.role,
+	parts: item.parts,
+});
+
+function store(sessionId, ...messages) {
+	transcripts.set(sessionId, [
+		...(transcripts.get(sessionId) ?? []),
+		...messages.map(storedMessage),
+	]);
+}
+
+function conflict(response) {
+	response.writeHead(409, {
+		"content-type": "application/json",
+		"x-request-id": "fixture-conflict",
+	});
+	response.end(
+		JSON.stringify({
+			error: {
+				code: "steer_not_available",
+				message: "No Turn is running to steer.",
+			},
+		}),
 	);
 }
 
@@ -236,8 +271,19 @@ beforeAll(async () => {
 			);
 		const generationRoute =
 			/^\/v1\/agents\/ag_[A-Za-z0-9]{16}\/generation$/.test(request.url);
+		const sessionPath =
+			/^\/v1\/agents\/ag_[A-Za-z0-9]{16}\/sessions\/ss_[A-Za-z0-9]{16}\/(messages|inputs)$/.exec(
+				request.url.split("?")[0],
+			)?.[1];
+		const messagesRoute =
+			sessionPath === "messages" && request.method === "GET";
+		const inputsRoute = sessionPath === "inputs" && request.method === "POST";
 		if (
-			(!chatRoute && !generationRoute && !continuationRoute) ||
+			(!chatRoute &&
+				!generationRoute &&
+				!continuationRoute &&
+				!messagesRoute &&
+				!inputsRoute) ||
 			(chatRoute &&
 				("message" in body ||
 					!Array.isArray(body.messages) ||
@@ -277,6 +323,83 @@ beforeAll(async () => {
 			(routeSession && sessionOwners.get(routeSession) !== user)
 		) {
 			notFound(response);
+			return;
+		}
+		if (messagesRoute) {
+			const query = new URL(request.url, upstreamUrl).searchParams;
+			const cursor = query.get("cursor");
+			if (
+				query.get("limit") !== "200" ||
+				[...query.keys()].some((key) => !["limit", "cursor"].includes(key)) ||
+				(cursor !== null && !/^\d+$/.test(cursor))
+			) {
+				response.writeHead(400, { "content-type": "application/json" });
+				response.end(
+					JSON.stringify({
+						error: {
+							code: "validation_failed",
+							message: "Unexpected upstream contract.",
+						},
+					}),
+				);
+				return;
+			}
+			const stored = transcripts.get(routeSession) ?? [];
+			const end = cursor === null ? stored.length : Number(cursor);
+			const start = Math.max(0, end - historyPageSize);
+			response.writeHead(200, { "content-type": "application/json" });
+			response.end(
+				JSON.stringify({
+					data: stored.slice(start, end),
+					nextCursor: start > 0 ? String(start) : null,
+					latestCursor: stored.length ? String(stored.length) : null,
+				}),
+			);
+			return;
+		}
+		if (inputsRoute) {
+			const steered = body.message;
+			if (
+				Object.keys(body).sort().join() !== "message,requestId" ||
+				steered?.role !== "user" ||
+				!steered.id ||
+				!Array.isArray(steered.parts)
+			) {
+				response.writeHead(400, { "content-type": "application/json" });
+				response.end(
+					JSON.stringify({
+						error: {
+							code: "validation_failed",
+							message: "Unexpected upstream contract.",
+						},
+					}),
+				);
+				return;
+			}
+			const take = liveTurns.get(routeSession);
+			if (!take) {
+				conflict(response);
+				return;
+			}
+			const now = new Date().toISOString();
+			const receipt = {
+				requestId: body.requestId,
+				sequence: 1,
+				message: steered,
+				state: "accepted",
+				turnId,
+				createdAt: now,
+				updatedAt: now,
+				reason: null,
+			};
+			response.writeHead(202, { "content-type": "application/json" });
+			response.end(
+				JSON.stringify({
+					data: receipt,
+					activity: { state: "running", turnId },
+				}),
+			);
+			take(receipt);
 			return;
 		}
 		if (continuationRoute) {
@@ -346,6 +469,55 @@ beforeAll(async () => {
 				clearInterval(heartbeat);
 				clearTimeout(timer);
 				disconnected.add(body.messages[0].id);
+			});
+			return;
+		}
+		if (prompt === "steerable") {
+			const steerSession =
+				routeSession ?? `ss_${String(++sequence).padStart(16, "0")}`;
+			sessionOwners.set(steerSession, user);
+			const assistantId = `assistant-${++sequence}`;
+			response.writeHead(200, {
+				"content-type": "text/event-stream",
+				"x-vercel-ai-ui-message-stream": "v1",
+				"x-ba-turn-id": turnId,
+				location: `/v1/agents/${routeAgent}/sessions/${steerSession}`,
+			});
+			const send = (event) =>
+				response.write(`data: ${JSON.stringify(event)}\n\n`);
+			send({ type: "start", messageId: assistantId });
+			const heartbeat = setInterval(
+				() => response.write(": heartbeat\n\n"),
+				50,
+			);
+			const timer = setTimeout(() => response.end("data: [DONE]\n\n"), 30000);
+			liveTurns.set(steerSession, (receipt) => {
+				liveTurns.delete(steerSession);
+				send({
+					type: "data-ba-steer-consumed",
+					transient: true,
+					data: {
+						requestId: receipt.requestId,
+						turnId,
+						sequence: receipt.sequence,
+						message: receipt.message,
+					},
+				});
+				send({ type: "text-start", id: "steered" });
+				send({ type: "text-delta", id: "steered", delta: "Reply after steer" });
+				send({ type: "text-end", id: "steered" });
+				send({ type: "finish", finishReason: "stop" });
+				store(steerSession, body.messages[0], receipt.message, {
+					id: assistantId,
+					role: "assistant",
+					parts: [{ type: "text", text: "Reply after steer" }],
+				});
+				response.end("data: [DONE]\n\n");
+			});
+			response.on("close", () => {
+				clearInterval(heartbeat);
+				clearTimeout(timer);
+				liveTurns.delete(steerSession);
 			});
 			return;
 		}
@@ -438,8 +610,28 @@ beforeAll(async () => {
 			});
 			return;
 		}
+		const replyId = `assistant-${++sequence}`;
+		if (!continuationRoute) {
+			const stored = transcripts.get(sessionId) ?? [];
+			if (body.trigger === "regenerate-message") {
+				transcripts.set(
+					sessionId,
+					stored.slice(
+						0,
+						stored.findLastIndex((item) => item.role === "assistant"),
+					),
+				);
+			} else {
+				store(sessionId, body.messages[0]);
+			}
+			store(sessionId, {
+				id: replyId,
+				role: "assistant",
+				parts: [{ type: "text", text: "Reply from BA" }],
+			});
+		}
 		const events = [
-			{ type: "start", messageId: `assistant-${sequence}` },
+			{ type: "start", messageId: replyId },
 			{ type: "text-start", id: "text-1" },
 			{ type: "text-delta", id: "text-1", delta: "Reply from BA" },
 			{ type: "text-end", id: "text-1" },
@@ -484,6 +676,10 @@ for (const [directory, prefix, separateFrontend] of examples) {
 		const worker = directory === "cloudflare-worker-relay";
 
 		function post(path, body, token = "Bearer demo-a") {
+			const sent =
+				path === "chat" && typeof body === "object"
+					? { op: "chat", ...body }
+					: body;
 			return fetch(`${url}${prefix}/${path}`, {
 				method: "POST",
 				headers: {
@@ -491,7 +687,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					origin,
 					...(token ? { authorization: token } : {}),
 				},
-				body: typeof body === "string" ? body : JSON.stringify(body),
+				body: typeof sent === "string" ? sent : JSON.stringify(sent),
 			});
 		}
 
@@ -867,6 +1063,186 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			expect(requests).toHaveLength(before + 3);
 		});
 
+		const forwardsBranchable = directory !== "vite-fastapi-ai-sdk";
+		const asRelayed = (stored) =>
+			stored.map(({ branchable, ...rest }) =>
+				forwardsBranchable ? { branchable, ...rest } : rest,
+			);
+		const pathOf = (call) => new URL(call.path, upstreamUrl).pathname;
+		const queryOf = (call) =>
+			Object.fromEntries(new URL(call.path, upstreamUrl).searchParams);
+
+		it("reads the stored transcript through history, one API page at a time", async () => {
+			const before = requests.length;
+			const walked = [];
+			let cursor;
+			do {
+				const response = await post("chat", {
+					op: "history",
+					sessionId,
+					...(cursor ? { cursor } : {}),
+				});
+				expect(response.status).toBe(200);
+				const page = await response.json();
+				expect(Object.keys(page).sort()).toEqual(["data", "nextCursor"]);
+				walked.unshift(...page.data);
+				cursor = page.nextCursor ?? undefined;
+			} while (cursor);
+			const stored = transcripts.get(sessionId);
+			expect(stored.length).toBeGreaterThan(historyPageSize);
+			expect(walked).toEqual(asRelayed(stored));
+			const reads = requests.slice(before);
+			expect(reads).toHaveLength(Math.ceil(stored.length / historyPageSize));
+			for (const [index, read] of reads.entries()) {
+				expect(pathOf(read)).toBe(
+					`/v1/agents/${agentA}/sessions/${sessionId}/messages`,
+				);
+				expect(read).toMatchObject({
+					authorization: "Bearer ba_test_server_only",
+					user: "user-a",
+				});
+				expect(queryOf(read)).toEqual({
+					limit: "200",
+					...(index
+						? { cursor: String(stored.length - index * historyPageSize) }
+						: {}),
+				});
+			}
+		});
+
+		if (!forwardsBranchable) {
+			it("leaves the API's branchable flag out of history messages", async () => {
+				const response = await post("chat", { op: "history", sessionId });
+				const { data } = await response.json();
+				expect(data.length).toBeGreaterThan(0);
+				for (const item of data) expect(item).not.toHaveProperty("branchable");
+			});
+		}
+
+		it("scopes history and steering to the signed-in user", async () => {
+			const before = requests.length;
+			const bodies = [
+				{ op: "history", sessionId },
+				{ op: "history", sessionId: "ss_zzzzzzzzzzzzzzzz" },
+				{
+					op: "steer",
+					sessionId,
+					requestId: "request-1",
+					message: message("Not yours"),
+				},
+			];
+			for (const body of bodies) {
+				const response = await post("chat", body, "Bearer demo-b");
+				expect(response.status).toBe(404);
+				expect(response.headers.get("x-request-id")).toBe("fixture-not-found");
+				expect(await response.json()).toMatchObject({
+					error: { code: "not_found" },
+				});
+			}
+			expect(requests.slice(before).map(({ user }) => user)).toEqual([
+				"user-b",
+				"user-b",
+				"user-b",
+			]);
+			for (const body of bodies)
+				expect((await post("chat", body, null)).status).toBe(401);
+			expect(requests).toHaveLength(before + 3);
+		});
+
+		it("rejects malformed history and steer requests without upstream work", async () => {
+			const before = requests.length;
+			const steer = {
+				op: "steer",
+				sessionId,
+				requestId: "request-1",
+				message: message("Hello"),
+			};
+			for (const body of [
+				JSON.stringify({ sessionId, message: message() }),
+				{ op: "bogus", sessionId },
+				{ op: 5, sessionId },
+				{ op: "history" },
+				{ op: "history", sessionId: "bad" },
+				{ op: "history", sessionId, cursor: "" },
+				{ op: "history", sessionId, cursor: 5 },
+				{ ...steer, sessionId: undefined },
+				{ ...steer, sessionId: "bad" },
+				{ ...steer, requestId: undefined },
+				{ ...steer, requestId: "" },
+				{ ...steer, requestId: 5 },
+				{ ...steer, requestId: "." },
+				{ ...steer, requestId: ".." },
+				{ ...steer, requestId: "x".repeat(129) },
+				{ ...steer, message: undefined },
+				{ ...steer, message: { ...message(), role: "assistant" } },
+				{ ...steer, message: { id: "m", role: "user", parts: [] } },
+			]) {
+				const response = await post("chat", body);
+				expect(response.status, JSON.stringify(body)).toBe(400);
+				expect(await response.json()).toMatchObject({
+					error: { code: "invalid_request" },
+				});
+			}
+			expect(requests).toHaveLength(before);
+		});
+
+		it("steers the running Turn and stores the steered message", async () => {
+			const before = requests.length;
+			const chat = await post("chat", { message: message("steerable") });
+			expect(chat.status).toBe(200);
+			const steerSession = chat.headers.get("location")?.split("/").at(-1);
+			const steered = message("Please be brief");
+			const requestId = "steer-request-1";
+			const receipt = await post("chat", {
+				op: "steer",
+				sessionId: steerSession,
+				requestId,
+				message: steered,
+			});
+			expect(receipt.status).toBe(202);
+			expect(await receipt.json()).toEqual({ state: "accepted" });
+			const output = await chat.text();
+			expect(output).toContain('"type":"data-ba-steer-consumed"');
+			expect(output).toContain(requestId);
+			expect(output).toContain("Reply after steer");
+			expect(requests.at(-1)).toMatchObject({
+				path: `/v1/agents/${agentA}/sessions/${steerSession}/inputs`,
+				authorization: "Bearer ba_test_server_only",
+				user: "user-a",
+				body: { requestId, message: steered },
+			});
+			expect(requests.slice(before)).toHaveLength(2);
+			const history = await post("chat", {
+				op: "history",
+				sessionId: steerSession,
+			});
+			expect((await history.json()).data.map(({ id }) => id)).toContain(
+				steered.id,
+			);
+		});
+
+		it("answers a steer with no running Turn with the API's 409", async () => {
+			const before = requests.length;
+			const late = message("Too late");
+			const response = await post("chat", {
+				op: "steer",
+				sessionId,
+				requestId: "late-request",
+				message: late,
+			});
+			expect(response.status).toBe(409);
+			expect(response.headers.get("x-request-id")).toBe("fixture-conflict");
+			expect(await response.json()).toMatchObject({
+				error: { code: "steer_not_available" },
+			});
+			expect(requests.slice(before)).toMatchObject([
+				{
+					path: `/v1/agents/${agentA}/sessions/${sessionId}/inputs`,
+					body: { requestId: "late-request", message: late },
+				},
+			]);
+		});
+
 		it("streams completion text and propagates upstream errors", async () => {
 			const response = await post("completion", { prompt: "Hello" });
 			expect(response.status).toBe(200);
@@ -894,7 +1270,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					origin,
 					authorization: "Bearer demo-a",
 				},
-				body: JSON.stringify({ message: slowMessage }),
+				body: JSON.stringify({ op: "chat", message: slowMessage }),
 				signal: controller.signal,
 			});
 			expect(response.status).toBe(200);
@@ -1021,7 +1397,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							"content-type": "application/json",
 							authorization: "Bearer demo-a",
 						},
-						body: JSON.stringify({ message: message() }),
+						body: JSON.stringify({ op: "chat", message: message() }),
 					});
 					expect(failed.status).toBe(502);
 					expect((await failed.json()).error.code).toBe("network_error");
@@ -1048,7 +1424,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							"content-type": "application/json",
 							authorization: "Bearer demo-a",
 						},
-						body: JSON.stringify({ message: message() }),
+						body: JSON.stringify({ op: "chat", message: message() }),
 					});
 					expect(response.status).toBe(500);
 					expect(requests).toHaveLength(before);
@@ -1112,7 +1488,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							"content-type": "application/json",
 							authorization: "Bearer demo-a",
 						},
-						body: JSON.stringify({ message: message() }),
+						body: JSON.stringify({ op: "chat", message: message() }),
 					});
 					expect(response.status).toBe(500);
 					expect(requests).toHaveLength(before);
@@ -1173,10 +1549,11 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				).toBe(403);
 			});
 		} else {
-			it("sends, regenerates, reloads, starts a new session, and completes in a browser", async () => {
+			it("sends, steers, reloads with history, starts a new session, and completes in a browser", async () => {
 				const page = await browser.newPage();
 				page.setDefaultTimeout(10000);
 				const errors = [];
+				const posted = [];
 				page.on("pageerror", (error) => errors.push(error.message));
 				page.on("console", (event) => {
 					if (event.type() === "error") errors.push(event.text());
@@ -1184,6 +1561,9 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				page.on("requestfailed", (request) =>
 					errors.push(request.url() + ": " + request.failure()?.errorText),
 				);
+				page.on("request", (request) => {
+					if (request.method() === "POST") posted.push(request.postDataJSON());
+				});
 				const browserRaw = process.env.EXAMPLES_COVERAGE_DIR
 					? join(process.env.EXAMPLES_COVERAGE_DIR, "browser/raw", directory)
 					: null;
@@ -1207,6 +1587,25 @@ for (const [directory, prefix, separateFrontend] of examples) {
 							resetOnNavigation: false,
 						});
 				};
+				const input = page.getByLabel("Message", { exact: true });
+				const sendButton = page.getByRole("button", {
+					name: "Send",
+					exact: true,
+				});
+				const steerButton = page.getByRole("button", {
+					name: "Steer",
+					exact: true,
+				});
+				const regenerateButton = page.getByRole("button", {
+					name: "Regenerate",
+					exact: true,
+				});
+				const transcript = (text) => page.getByText(text, { exact: true });
+				const storedSession = () =>
+					page.evaluate(() => localStorage.getItem("blazing-agents-session"));
+				const turns = () =>
+					requests.filter(({ path }) => !/\/(messages|inputs)(\?|$)/.test(path))
+						.length;
 				try {
 					if (browserRaw) {
 						await mkdir(browserRaw, { recursive: true });
@@ -1216,28 +1615,25 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					}
 					await page.goto(frontendUrl);
 					await page.getByLabel("Application token").fill("demo-a");
+					const beforeEmpty = requests.length;
 					await page.evaluate(() =>
 						document
 							.querySelector('input[aria-label="Message"]')
 							.closest("form")
 							.requestSubmit(),
 					);
-					await page.getByLabel("Message", { exact: true }).fill("Hello");
-					await page.getByRole("button", { name: "Send / resend" }).click();
-					await page.getByText("Reply from BA", { exact: false }).waitFor();
+					await input.fill("Hello");
+					await sendButton.click();
+					await transcript("assistant: Reply from BA").waitFor();
+					expect(requests.slice(beforeEmpty)).toHaveLength(1);
+					await expect.poll(() => regenerateButton.isEnabled()).toBe(true);
+					await regenerateButton.click();
 					await expect
-						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
-						.toBe(true);
-					await page
-						.getByRole("button", { name: "Regenerate", exact: true })
-						.click();
-					await page.waitForFunction(
-						() =>
-							document.querySelector('input[aria-label="Message"]').disabled ===
-							false,
-					);
-					await page.getByLabel("Message", { exact: true }).fill("fail");
-					await page.getByRole("button", { name: "Send / resend" }).click();
+						.poll(() => requests.at(-1).body.trigger)
+						.toBe("regenerate-message");
+					await expect.poll(() => regenerateButton.isEnabled()).toBe(true);
+					await input.fill("fail");
+					await sendButton.click();
 					await page
 						.getByRole("alert")
 						.filter({ hasText: "Fixture rejected" })
@@ -1251,36 +1647,39 @@ for (const [directory, prefix, separateFrontend] of examples) {
 						.filter({ hasText: "Fixture rejected" })
 						.nth(1)
 						.waitFor();
-					const saved = await page.evaluate(() =>
-						localStorage.getItem("blazing-agents-session"),
-					);
+					const saved = await storedSession();
 					expect(saved).toMatch(/^ss_/);
-					const beforeReload = requests.length;
 					await reload();
-					await delay(250);
-					expect(requests).toHaveLength(beforeReload);
 					await page.getByText(`Session: ${saved}`, { exact: false }).waitFor();
 					await page.getByLabel("Application token").fill("demo-a");
-					await page
-						.getByLabel("Message", { exact: true })
-						.fill("After reload");
-					await page.getByRole("button", { name: "Send / resend" }).click();
-					await page.getByText("Reply from BA", { exact: false }).waitFor();
+					await transcript("user: Hello").waitFor();
+					await transcript("assistant: Reply from BA").waitFor();
+					expect(posted).toContainEqual({ op: "history", sessionId: saved });
+					expect(
+						requests.filter(
+							({ path, user }) =>
+								path.startsWith(
+									`/v1/agents/${agentA}/sessions/${saved}/messages`,
+								) && user === "user-a",
+						).length,
+					).toBeGreaterThan(0);
+					await input.fill("After reload");
+					await sendButton.click();
 					await expect
-						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
-						.toBe(true);
+						.poll(() => page.getByText("Reply from BA").count())
+						.toBe(2);
+					await expect.poll(() => regenerateButton.isEnabled()).toBe(true);
 					expect(requests.at(-1).path).toContain(saved);
 					await page
 						.getByRole("button", { name: "New Session", exact: false })
 						.click();
-					expect(
-						await page.evaluate(() =>
-							localStorage.getItem("blazing-agents-session"),
-						),
-					).toBeNull();
+					expect(await storedSession()).toBeNull();
+					await expect
+						.poll(() => page.getByText("Reply from BA").count())
+						.toBe(0);
 					const beforeFailure = requests.length;
-					await page.getByLabel("Message", { exact: true }).fill("fail");
-					await page.getByRole("button", { name: "Send / resend" }).click();
+					await input.fill("fail");
+					await sendButton.click();
 					await expect.poll(() => requests.length).toBe(beforeFailure + 1);
 					await page
 						.getByRole("alert")
@@ -1289,48 +1688,55 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					const afterFailure = requests.length;
 					await delay(350);
 					expect(requests).toHaveLength(afterFailure);
-					expect(
-						await page.getByLabel("Message", { exact: true }).inputValue(),
-					).toBe("fail");
-					await page.getByLabel("Message", { exact: true }).fill("Try again");
-					await page.getByRole("button", { name: "Send / resend" }).click();
-					await page.getByText("Reply from BA", { exact: false }).waitFor();
-					await expect
-						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
-						.toBe(true);
+					expect(await input.inputValue()).toBe("fail");
+					await input.fill("Try again");
+					await sendButton.click();
+					await transcript("assistant: Reply from BA").waitFor();
+					await expect.poll(() => regenerateButton.isEnabled()).toBe(true);
 					expect(requests.at(-1).path).toBe(`/v1/agents/${agentA}/sessions`);
-					expect(
-						await page.evaluate(() =>
-							localStorage.getItem("blazing-agents-session"),
-						),
-					).not.toBe(saved);
-					await page.getByLabel("Message", { exact: true }).fill("discarded");
+					expect(await storedSession()).not.toBe(saved);
+					await input.fill("discarded");
 					await page.getByRole("button", { name: "Discard input" }).click();
+					expect(await input.inputValue()).toBe("");
+					const beforeSteer = turns();
+					await input.fill("steerable");
+					await sendButton.click();
+					await steerButton.waitFor();
+					await input.fill("Please be brief");
+					await steerButton.click();
+					await transcript("assistant: Reply after steer").waitFor();
+					await transcript("user: Please be brief").waitFor();
+					await sendButton.waitFor();
+					expect(turns()).toBe(beforeSteer + 1);
+					const steerRequest = posted.find(({ op }) => op === "steer");
+					expect(steerRequest).toMatchObject({
+						sessionId: await storedSession(),
+						message: { parts: [{ type: "text", text: "Please be brief" }] },
+					});
 					expect(
-						await page.getByLabel("Message", { exact: true }).inputValue(),
-					).toBe("");
-					const beforeSlow = requests.length;
-					await page.getByLabel("Message", { exact: true }).fill("slow");
-					await page.getByRole("button", { name: "Send / resend" }).click();
-					await expect.poll(() => requests.length).toBe(beforeSlow + 1);
-					await page.evaluate(() =>
-						document
-							.querySelector('input[aria-label="Message"]')
-							.closest("form")
-							.requestSubmit(),
-					);
+						requests.filter(({ path }) => path.endsWith("/inputs")).at(-1),
+					).toMatchObject({
+						body: {
+							requestId: steerRequest.requestId,
+							message: steerRequest.message,
+						},
+					});
+					expect(await input.inputValue()).toBe("");
+					await reload();
+					await page.getByLabel("Application token").fill("demo-a");
+					await transcript("user: Please be brief").waitFor();
+					await transcript("assistant: Reply after steer").waitFor();
+					const beforeSlow = turns();
+					await input.fill("slow");
+					await sendButton.click();
+					await expect.poll(() => turns()).toBe(beforeSlow + 1);
 					await page.getByRole("button", { name: "Stop", exact: true }).click();
-					await expect
-						.poll(() => page.getByLabel("Message", { exact: true }).isEnabled())
-						.toBe(true);
-					expect(
-						await page.getByLabel("Message", { exact: true }).inputValue(),
-					).toBe("slow");
+					await expect.poll(() => input.inputValue()).toBe("slow");
 					await delay(350);
-					expect(requests).toHaveLength(beforeSlow + 1);
+					expect(turns()).toBe(beforeSlow + 1);
 					await reload();
 					await delay(350);
-					expect(requests).toHaveLength(beforeSlow + 1);
+					expect(turns()).toBe(beforeSlow + 1);
 					await page.getByLabel("Application token").fill("demo-a");
 					await page.getByLabel("Completion prompt").fill("fail");
 					await page

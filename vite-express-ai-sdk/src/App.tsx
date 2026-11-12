@@ -1,94 +1,30 @@
-import { useChat, useCompletion } from "@ai-sdk/react";
-import { BlazingAgentsChatTransport } from "@blazingagents/sdk";
-import { generateId, type UIMessage } from "ai";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useCompletion } from "@ai-sdk/react";
+import { useBlazingAgentsChat } from "@blazingagents/sdk/react";
+import { type FormEvent, useMemo, useState } from "react";
 
 export function App() {
 	const [token, setToken] = useState("");
 	const [chatInput, setChatInput] = useState("");
-	const [sessionId, setSessionId] = useState<string | undefined>(undefined);
-	const active = useRef(false);
-	const regenerating = useRef(false);
-	const completedMessages = useRef<UIMessage[]>([]);
-	useEffect(() => {
-		setSessionId(localStorage.getItem("blazing-agents-session") ?? undefined);
-	}, []);
 	const headers = useMemo(
 		() => ({ authorization: `Bearer ${token}` }),
 		[token],
 	);
-	const transport = useMemo(
-		() =>
-			new BlazingAgentsChatTransport({
-				api: "/chat",
-				headers,
-				sessionId,
-				onSessionId(id) {
-					localStorage.setItem("blazing-agents-session", id);
-					setSessionId(id);
-				},
-			}),
-		[headers, sessionId],
-	);
-	const chat = useChat({
-		transport,
-		onError() {
-			active.current = false;
-			chat.setMessages(completedMessages.current);
-		},
-		onFinish({ isAbort, isError, isDisconnect, finishReason, messages }) {
-			active.current = false;
-			if (
-				!(isAbort || isError || isDisconnect) &&
-				finishReason &&
-				finishReason !== "error"
-			) {
-				completedMessages.current = messages;
-				// biome-ignore lint/suspicious/noUnnecessaryConditions: Submit and regenerate handlers update this ref before completion.
-				if (!regenerating.current) setChatInput("");
-			} else {
-				chat.setMessages(completedMessages.current);
-			}
-		},
-	});
+	const chat = useBlazingAgentsChat({ api: "/chat", headers });
 	const completion = useCompletion({
 		api: "/completion",
 		headers,
 		streamProtocol: "text",
 	});
-	const busy = chat.status === "submitted" || chat.status === "streaming";
 
 	function submitChat(event: FormEvent) {
 		event.preventDefault();
-		// biome-ignore lint/suspicious/noUnnecessaryConditions: Stream callbacks update the synchronous duplicate-submit guard.
-		if (active.current || !chatInput.trim()) return;
-		active.current = true;
-		regenerating.current = false;
-		chat.clearError();
-		void chat.sendMessage({
-			id: generateId(),
-			role: "user",
-			parts: [{ type: "text", text: chatInput }],
-		});
-	}
-	async function stopChat() {
-		await chat.stop();
-		active.current = false;
-		chat.setMessages(completedMessages.current);
-	}
-	function regenerate() {
-		active.current = true;
-		regenerating.current = true;
-		chat.clearError();
-		void chat.regenerate();
-	}
-	function newSession() {
-		localStorage.removeItem("blazing-agents-session");
-		setSessionId(undefined);
-		completedMessages.current = [];
-		chat.setMessages([]);
-		chat.clearError();
+		const text = chatInput;
+		if (!text.trim()) return;
 		setChatInput("");
+		void chat.send(text).then((stored) => {
+			if (!stored)
+				setChatInput((current) => [text, current].filter(Boolean).join(" "));
+		});
 	}
 	return (
 		<main
@@ -103,8 +39,8 @@ export function App() {
 				/>
 			</label>
 			<p>
-				Session: {sessionId ?? "new"}{" "}
-				<button type="button" onClick={newSession} disabled={busy}>
+				Session: {chat.sessionId ?? "new"}{" "}
+				<button type="button" onClick={chat.newSession}>
 					New Session
 				</button>
 			</p>
@@ -121,37 +57,33 @@ export function App() {
 				<input
 					aria-label="Message"
 					value={chatInput}
-					disabled={busy}
 					onChange={(event) => setChatInput(event.target.value)}
 				/>
-				<button type="submit" disabled={busy || !chatInput.trim()}>
-					Send / resend
+				<button type="submit" disabled={!chatInput.trim()}>
+					{chat.status === "running" ? "Steer" : "Send"}
 				</button>
-				<button type="button" onClick={stopChat} disabled={!busy}>
+				<button
+					type="button"
+					onClick={chat.stop}
+					disabled={chat.status !== "running"}
+				>
 					Stop
 				</button>
-				<button type="button" onClick={() => setChatInput("")} disabled={busy}>
+				<button type="button" onClick={() => setChatInput("")}>
 					Discard input
 				</button>
 				<button
 					type="button"
-					onClick={regenerate}
-					disabled={
-						busy ||
-						!sessionId ||
-						!completedMessages.current.some(
-							(message) => message.role === "assistant",
-						)
-					}
+					onClick={chat.regenerate}
+					disabled={!chat.canRegenerate}
 				>
 					Regenerate
 				</button>
 			</form>
 			{chat.error && <p role="alert">{chat.error.message}</p>}
 			<p>
-				After an error or Stop, edit or resend your input. Each send is a new
-				attempt and may repeat Tool effects. A lost response may already be
-				saved.
+				A message that fails or is stopped returns to the input. Each resend is
+				a new attempt and may repeat Tool effects.
 			</p>
 			<h2>Completion</h2>
 			<form onSubmit={completion.handleSubmit}>

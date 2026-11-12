@@ -18,15 +18,16 @@ processes after the run. Playwright drives each of the five browser
 applications.
 
 Local HTTP fixtures implement BA's Agent lookup and creation, chat, generation,
-and Session fork responses. Like the API, the fixture answers 404 for an Agent
+Session message pages, steer receipts, and Session fork responses. Like the API, the fixture answers 404 for an Agent
 or Session that does not belong to the user the request is scoped to. Tests use
 the published BA SDKs and AI SDK hooks. These tests catch errors in routing,
 authentication, the Agent each user gets, Session scoping across server
 restarts, headers, stream handling, and structured output validation. Browser journeys also cover
-reload/resume, regeneration, starting a new Session, errors, and Stop without
-automatically resending work. The upstream fixture requires canonical `messages`
+reload with history restore, steering a running Turn, regeneration, starting a
+new Session, errors, and Stop without automatically resending work. The upstream fixture requires canonical `messages`
 chat bodies and one streamed `/tool-approvals/continue` request per approval round.
-All six relays test current-round decisions, Session scoping, and settled conflicts.
+All six relays test current-round decisions, Session scoping, settled conflicts,
+history paging, and steering.
 They require no BA account or model credentials and never load a development
 BA API key into requests.
 
