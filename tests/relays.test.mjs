@@ -49,6 +49,7 @@ function agentRecord(user, body) {
 		autoCompaction: true,
 		compactionReserveTokens: 16384,
 		memoryInjectionEnabled: false,
+		autoApprovalModel: null,
 		tools: [],
 		instructions: "",
 		userId: user,

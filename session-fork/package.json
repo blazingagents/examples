@@ -8,7 +8,7 @@
     "fix": "ultracite fix main.ts"
   },
   "dependencies": {
-    "@blazingagents/sdk": "0.53.0"
+    "@blazingagents/sdk": "0.54.0"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
