@@ -1,30 +1,23 @@
 import json
 import os
-import re
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, Literal, TypeGuard
+from typing import Any, Literal
 
 from blazing_agents import (
     APIConnectionError,
     APIStatusError,
     AsyncBlazingAgents,
-    AsyncChatStream,
-    AsyncCompletionStream,
+    AsyncChatRelay,
     AsyncUserClient,
     FunctionContext,
-    StreamError,
-    ToolApprovalDecisionInput,
+    RelayContext,
     define_function,
 )
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-
-SESSION_ID = re.compile(r"^ss_[A-Za-z0-9]{16}$")
-MAX_REQUEST_ID_LENGTH = 128
-HISTORY_PAGE_SIZE = 200
 
 
 class ShippingInput(BaseModel):
@@ -88,6 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         base_url=required("BLAZING_AGENTS_BASE_URL").rstrip("/"),
     )
     app.state.blazing_agents = client
+    app.state.relay = AsyncChatRelay(client=client, resolve_context=resolve_context)
     try:
         yield
     finally:
@@ -115,16 +109,6 @@ def error(
     )
 
 
-def relay_error(
-    exc: APIStatusError | StreamError | APIConnectionError,
-) -> JSONResponse:
-    if isinstance(exc, APIStatusError):
-        return error(exc.status_code, exc.code, str(exc), exc.request_id)
-    if isinstance(exc, StreamError):
-        return error(502, "stream_error", str(exc), exc.request_id)
-    return error(502, "network_error", "Unable to reach Blazing Agents.")
-
-
 async def body(request: Request) -> dict[str, Any] | None:
     try:
         value = await request.json()
@@ -133,230 +117,26 @@ async def body(request: Request) -> dict[str, Any] | None:
         return None
 
 
-def valid_text_part(value: Any) -> bool:
-    return (
-        isinstance(value, dict)
-        and value.get("type") == "text"
-        and isinstance(value.get("text"), str)
+async def resolve_context(request: Request) -> RelayContext | None:
+    owner = user_id(request)
+    if not owner:
+        return None
+    client: AsyncBlazingAgents = request.app.state.blazing_agents
+    return RelayContext(
+        agent_id=await agent_for(client.for_user(owner)),
+        user_id=owner,
+        functions=FUNCTIONS,
+        metadata={"app": "vite-fastapi"},
     )
-
-
-def valid_message(value: Any) -> TypeGuard[dict[str, Any]]:
-    if not isinstance(value, dict) or not isinstance(value.get("id"), str):
-        return False
-    if not value["id"] or value.get("role") not in ("user", "assistant"):
-        return False
-    parts = value.get("parts")
-    if not isinstance(parts, list) or not parts:
-        return False
-    if value["role"] == "user":
-        return all(valid_text_part(part) for part in parts)
-    for part in parts:
-        if not isinstance(part, dict):
-            return False
-        kind = part.get("type")
-        if not isinstance(kind, str):
-            return False
-        if (
-            not (kind.startswith("tool-") or kind == "dynamic-tool")
-            or part.get("state") != "approval-responded"
-        ):
-            continue
-        if not isinstance(part.get("toolCallId"), str) or "input" not in part:
-            return False
-        if kind == "dynamic-tool" and not isinstance(part.get("toolName"), str):
-            return False
-        approval = part.get("approval")
-        if (
-            not isinstance(approval, dict)
-            or not isinstance(approval.get("id"), str)
-            or not approval["id"]
-        ):
-            return False
-        if not isinstance(approval.get("approved"), bool):
-            return False
-        if "reason" in approval and not isinstance(approval["reason"], str):
-            return False
-    return True
-
-
-def approval_decisions(message: dict[str, Any]) -> list[ToolApprovalDecisionInput]:
-    parts = message["parts"]
-    last_step = max(
-        (index for index, part in enumerate(parts) if part["type"] == "step-start"),
-        default=-1,
-    )
-    decisions: list[ToolApprovalDecisionInput] = []
-    for part in parts[last_step + 1 :]:
-        if (
-            part["type"].startswith("tool-") or part["type"] == "dynamic-tool"
-        ) and part.get("state") == "approval-responded":
-            decision: ToolApprovalDecisionInput = {
-                "approval_id": part["approval"]["id"],
-                "approved": part["approval"]["approved"],
-            }
-            if "reason" in part["approval"]:
-                decision["reason"] = part["approval"]["reason"]
-            decisions.append(decision)
-    return decisions
-
-
-def upstream_headers(
-    stream: AsyncChatStream | AsyncCompletionStream,
-) -> dict[str, str]:
-    headers: dict[str, str] = {}
-    if location := stream.headers.get("location"):
-        headers["location"] = location
-    if stream.request_id:
-        headers["x-request-id"] = stream.request_id
-    return headers
-
-
-def valid_session_id(value: Any) -> TypeGuard[str]:
-    return isinstance(value, str) and SESSION_ID.fullmatch(value) is not None
-
-
-def valid_request_id(value: Any) -> TypeGuard[str]:
-    return (
-        isinstance(value, str)
-        and 0 < len(value) <= MAX_REQUEST_ID_LENGTH
-        and value not in (".", "..")
-    )
-
-
-async def relay_chat(user: AsyncUserClient, incoming: dict[str, Any]) -> Response:
-    if not valid_message(incoming.get("message")):
-        return error(400, "invalid_request", "Invalid chat message.")
-    session_id = incoming.get("sessionId")
-    if session_id is not None and not valid_session_id(session_id):
-        return error(400, "invalid_request", "Invalid request body.")
-    trigger = incoming.get("trigger", "submit-message")
-    if trigger not in ("submit-message", "regenerate-message"):
-        return error(400, "invalid_request", "Invalid request body.")
-    message_id = incoming.get("messageId")
-    if message_id is not None and (not isinstance(message_id, str) or not message_id):
-        return error(400, "invalid_request", "Invalid request body.")
-
-    kwargs: dict[str, Any] = {}
-    if message_id is not None:
-        kwargs["message_id"] = message_id
-    if session_id is not None:
-        kwargs["session_id"] = session_id
-    agent_id = await agent_for(user)
-    if incoming["message"]["role"] == "assistant":
-        if session_id is None:
-            return error(
-                400,
-                "invalid_request",
-                "Tool approval requires an existing Session.",
-            )
-        decisions = approval_decisions(incoming["message"])
-        if not decisions:
-            return error(
-                400,
-                "invalid_request",
-                "The message has no tool approval responses.",
-            )
-        stream = await user.continue_chat(
-            agent_id=agent_id,
-            session_id=session_id,
-            decisions=decisions,
-            functions=FUNCTIONS,
-        )
-    else:
-        stream = await user.chat(
-            agent_id=agent_id,
-            functions=FUNCTIONS,
-            message=incoming["message"],
-            trigger=trigger if session_id else "submit-message",
-            metadata={"app": "vite-fastapi"},
-            **kwargs,
-        )
-    headers = upstream_headers(stream)
-    headers["x-vercel-ai-ui-message-stream"] = "v1"
-    headers["cache-control"] = "no-cache"
-    return StreamingResponse(
-        stream,
-        status_code=stream.status_code,
-        headers=headers,
-        media_type="text/event-stream",
-    )
-
-
-async def relay_history(user: AsyncUserClient, incoming: dict[str, Any]) -> Response:
-    session_id = incoming.get("sessionId")
-    cursor = incoming.get("cursor")
-    if not valid_session_id(session_id) or (
-        cursor is not None and not (isinstance(cursor, str) and cursor)
-    ):
-        return error(400, "invalid_request", "Invalid request body.")
-    kwargs: dict[str, Any] = {} if cursor is None else {"cursor": cursor}
-    page = await user.sessions.messages(
-        agent_id=await agent_for(user),
-        session_id=session_id,
-        limit=HISTORY_PAGE_SIZE,
-        **kwargs,
-    )
-    return JSONResponse(
-        {
-            "data": [
-                message.model_dump(
-                    mode="json",
-                    by_alias=True,
-                    exclude={"branchable"},
-                    exclude_unset=True,
-                )
-                for message in page.data
-            ],
-            "nextCursor": page.next_cursor,
-        }
-    )
-
-
-async def relay_steer(user: AsyncUserClient, incoming: dict[str, Any]) -> Response:
-    session_id = incoming.get("sessionId")
-    request_id = incoming.get("requestId")
-    message = incoming.get("message")
-    if not (
-        valid_session_id(session_id)
-        and valid_request_id(request_id)
-        and valid_message(message)
-        and message["role"] == "user"
-    ):
-        return error(400, "invalid_request", "Invalid request body.")
-    receipt = await user.sessions.submit_input(
-        agent_id=await agent_for(user),
-        session_id=session_id,
-        request_id=request_id,
-        message=message,
-    )
-    return JSONResponse({"state": receipt.data.state}, status_code=202)
-
-
-OPERATIONS: dict[
-    str, Callable[[AsyncUserClient, dict[str, Any]], Awaitable[Response]]
-] = {
-    "chat": relay_chat,
-    "history": relay_history,
-    "steer": relay_steer,
-}
 
 
 @app.post("/api/chat")
-async def relay(request: Request):
-    owner = user_id(request)
-    if not owner:
-        return error(401, "unauthorized", "Authentication required.")
-    incoming = await body(request) or {}
-    op = incoming.get("op")
-    operation = OPERATIONS.get(op) if isinstance(op, str) else None
-    if operation is None:
-        return error(400, "invalid_request", "Invalid request body.")
-    client: AsyncBlazingAgents = request.app.state.blazing_agents
-    try:
-        return await operation(client.for_user(owner), incoming)
-    except (APIStatusError, StreamError, APIConnectionError) as exc:
-        return relay_error(exc)
+async def chat(request: Request):
+    relay: AsyncChatRelay[Request] = request.app.state.relay
+    answer = await relay.handle(request, await request.body())
+    return StreamingResponse(
+        answer, status_code=answer.status_code, headers=answer.headers
+    )
 
 
 @app.post("/api/completion")
@@ -376,11 +156,13 @@ async def completion(request: Request):
             prompt=prompt.strip(),
             metadata={"app": "vite-fastapi"},
         )
-    except (APIStatusError, StreamError, APIConnectionError) as exc:
-        return relay_error(exc)
+    except APIStatusError as exc:
+        return error(exc.status_code, exc.code, str(exc), exc.request_id)
+    except APIConnectionError:
+        return error(502, "network_error", "Unable to reach Blazing Agents.")
     return StreamingResponse(
         stream,
         status_code=stream.status_code,
-        headers=upstream_headers(stream),
+        headers={"x-request-id": stream.request_id} if stream.request_id else None,
         media_type="text/plain",
     )

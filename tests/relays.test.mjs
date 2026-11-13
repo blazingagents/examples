@@ -533,10 +533,15 @@ beforeAll(async () => {
 			return;
 		}
 		if (request.url.endsWith("/generation")) {
-			response.writeHead(200, {
-				"content-type": "text/plain",
-				"x-request-id": "fixture-completion",
-			});
+			response.writeHead(
+				200,
+				prompt === "anonymous"
+					? { "content-type": "text/plain" }
+					: {
+							"content-type": "text/plain",
+							"x-request-id": "fixture-completion",
+						},
+			);
 			response.end(
 				body.output.type === "object"
 					? JSON.stringify({
@@ -1063,11 +1068,6 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			expect(requests).toHaveLength(before + 3);
 		});
 
-		const forwardsBranchable = directory !== "vite-fastapi-ai-sdk";
-		const asRelayed = (stored) =>
-			stored.map(({ branchable, ...rest }) =>
-				forwardsBranchable ? { branchable, ...rest } : rest,
-			);
 		const pathOf = (call) => new URL(call.path, upstreamUrl).pathname;
 		const queryOf = (call) =>
 			Object.fromEntries(new URL(call.path, upstreamUrl).searchParams);
@@ -1090,7 +1090,7 @@ for (const [directory, prefix, separateFrontend] of examples) {
 			} while (cursor);
 			const stored = transcripts.get(sessionId);
 			expect(stored.length).toBeGreaterThan(historyPageSize);
-			expect(walked).toEqual(asRelayed(stored));
+			expect(walked).toEqual(stored);
 			const reads = requests.slice(before);
 			expect(reads).toHaveLength(Math.ceil(stored.length / historyPageSize));
 			for (const [index, read] of reads.entries()) {
@@ -1109,15 +1109,6 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				});
 			}
 		});
-
-		if (!forwardsBranchable) {
-			it("leaves the API's branchable flag out of history messages", async () => {
-				const response = await post("chat", { op: "history", sessionId });
-				const { data } = await response.json();
-				expect(data.length).toBeGreaterThan(0);
-				for (const item of data) expect(item).not.toHaveProperty("branchable");
-			});
-		}
 
 		it("scopes history and steering to the signed-in user", async () => {
 			const before = requests.length;
@@ -1304,7 +1295,6 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					{ id: "m", role: "user" },
 					{ id: "m", role: "user", parts: [] },
 					{ id: "m", role: "user", parts: ["x"] },
-					{ id: "m", role: "user", parts: [{ type: "image" }] },
 					{ id: "m", role: "user", parts: [{ type: "text" }] },
 					assistant(["x"]),
 					assistant([{ type: 1 }]),
@@ -1357,6 +1347,17 @@ for (const [directory, prefix, separateFrontend] of examples) {
 				expect(requests).toHaveLength(before);
 			});
 
+			it("streams completion text with and without an upstream request ID", async () => {
+				const identified = await post("completion", { prompt: "Hello" });
+				expect(identified.headers.get("x-request-id")).toBe(
+					"fixture-completion",
+				);
+				const anonymous = await post("completion", { prompt: "anonymous" });
+				expect(anonymous.status).toBe(200);
+				expect(anonymous.headers.get("x-request-id")).toBeNull();
+				expect(await anonymous.text()).toBe("Completion from BA");
+			});
+
 			it("continues an approval without a reason", async () => {
 				const before = requests.length;
 				const noReason = approvalMessage();
@@ -1401,6 +1402,16 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					});
 					expect(failed.status).toBe(502);
 					expect((await failed.json()).error.code).toBe("network_error");
+					const completion = await fetch(`${local}${prefix}/completion`, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							authorization: "Bearer demo-a",
+						},
+						body: JSON.stringify({ prompt: "Hello" }),
+					});
+					expect(completion.status).toBe(502);
+					expect((await completion.json()).error.code).toBe("network_error");
 				} finally {
 					await stop(unreachable);
 				}
