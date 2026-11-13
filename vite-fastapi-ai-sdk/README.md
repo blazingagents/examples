@@ -1,10 +1,8 @@
 # Vite + FastAPI + AI SDK
 
-The relay supports one streamed approval continuation. The sample UI has no approval controls.
+This example pairs a small React and Vite UI with a FastAPI backend built on the Blazing Agents Python SDK. The browser uses an application token. FastAPI maps it to a trusted user ID, keeps the Blazing Agents key on the server, and calls Blazing Agents as that user through `client.for_user(user_id)`. On a user's first request, FastAPI creates an Agent for that user, which comes with its own Workspace. The API answers 404 for a Session that the user does not own.
 
-This example pairs a small React and Vite UI with a FastAPI relay built on the Blazing Agents Python SDK. The browser uses an application token. FastAPI maps it to a trusted user ID, keeps the Blazing Agents key on the server, and calls Blazing Agents as that user through `client.for_user(user_id)`. On a user's first request, FastAPI creates an Agent for that user, which comes with its own Workspace. The API answers 404 for a Session that the user does not own.
-
-The one `/api/chat` route answers three operations, chosen by the `op` field of the request body: `chat` streams a Turn, `history` returns one page of the stored transcript, and `steer` sends a message into the running Turn. The [browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md) describes each.
+The one `/api/chat` route is the SDK's `AsyncChatRelay`. The app's own code is `resolve_context`, which signs the user in, looks up their Agent, and sets the backend function and request metadata. The relay answers three operations, chosen by the `op` field of the request body: `chat` streams a Turn, `history` returns one page of the stored transcript, and `steer` sends a message into the running Turn. It also continues one streamed Tool approval; the sample UI has no approval controls. The [browser relay contract](https://github.com/blazingagents/typescript-sdk/blob/main/docs/relay-contract.md) describes each operation, and `/api/completion` is a plain route in `backend/main.py`.
 
 ## Run locally
 
