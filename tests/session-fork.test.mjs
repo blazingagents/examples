@@ -32,6 +32,7 @@ const child = {
 		autoCompaction: true,
 		compactionReserveTokens: 16384,
 		memoryInjectionEnabled: false,
+		autoApprovalModel: null,
 		metadata: {},
 	},
 };
