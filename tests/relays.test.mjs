@@ -1742,7 +1742,17 @@ for (const [directory, prefix, separateFrontend] of examples) {
 					await input.fill("slow");
 					await sendButton.click();
 					await expect.poll(() => turns()).toBe(beforeSlow + 1);
+					const slowTurn = () =>
+						requests.findLast(
+							({ body }) => body?.messages?.[0]?.parts?.[0]?.text === "slow",
+						);
+					await expect.poll(slowTurn).toBeTruthy();
 					await page.getByRole("button", { name: "Stop", exact: true }).click();
+					await expect
+						.poll(() => disconnected.has(slowTurn().body.messages[0].id), {
+							timeout: 5000,
+						})
+						.toBe(true);
 					await expect.poll(() => input.inputValue()).toBe("slow");
 					await delay(350);
 					expect(turns()).toBe(beforeSlow + 1);
