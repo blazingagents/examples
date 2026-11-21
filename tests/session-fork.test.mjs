@@ -12,6 +12,7 @@ const messageId = "accepted-assistant-1";
 const forkedFrom = { sessionId, messageId };
 const child = {
 	id: "ss_child01234567890",
+	tenantId: "ten_0123456789abcdef",
 	messageCount: 2,
 	lastMessagePreview: "Accepted reply",
 	userId: "",
@@ -164,7 +165,7 @@ for (const language of ["TypeScript", "Python"]) {
 						"--env-file",
 						join(temporary, ".env"),
 						"--with",
-						"blazing_agents==0.37.0",
+						"blazing_agents==0.38.0",
 						"--with",
 						"coverage==7.16.2",
 						"python",
@@ -208,7 +209,7 @@ for (const language of ["TypeScript", "Python"]) {
 							"--env-file",
 							join(temporary, ".env-missing"),
 							"--with",
-							"blazing_agents==0.37.0",
+							"blazing_agents==0.38.0",
 							"--with",
 							"coverage==7.16.2",
 							"python",

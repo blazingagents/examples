@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@blazingagents/sdk": "0.56.1",
+    "@blazingagents/sdk": "0.57.0",
     "ai": "7.0.84"
   },
   "devDependencies": {

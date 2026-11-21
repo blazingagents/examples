@@ -396,7 +396,7 @@ beforeAll(async () => {
 			response.writeHead(202, { "content-type": "application/json" });
 			response.end(
 				JSON.stringify({
-					data: receipt,
+					input: receipt,
 					activity: { state: "running", turnId },
 				}),
 			);
