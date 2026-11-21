@@ -12,6 +12,7 @@ const messageId = "accepted-assistant-1";
 const forkedFrom = { sessionId, messageId };
 const child = {
 	id: "ss_child01234567890",
+	tenantId: "ten_0123456789abcdef",
 	messageCount: 2,
 	lastMessagePreview: "Accepted reply",
 	userId: "",
